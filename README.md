@@ -18,6 +18,8 @@ Smart assistant that turns Instagram DMs into a streamlined booking flow for a t
     <source src="demo-assistant.mp4" type="video/mp4">
     Your browser does not support the video tag. <a href="demo-assistant.mp4">Download the MP4</a>.
   </video>
+
+  <p><a href="demo-assistant.mp4">▶️ Watch the demo (MP4)</a></p>
 </details>
 
 ## Features
