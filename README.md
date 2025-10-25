@@ -14,10 +14,11 @@ Smart assistant that turns Instagram DMs into a streamlined booking flow for a t
 <details>
   <summary>Watch demo</summary>
 
-  <video src="demo-assistant.mp4" controls width="720"></video>
+<iframe width="685" height="1218" src="https://www.youtube.com/embed/jegr-F_Fml0" title="demo assistant" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen>
+</iframe>
 
   
-  <a href="demo-assistant.mp4">Direct link to MP4</a>
+  <a href="https://youtube.com/shorts/jegr-F_Fml0?si=cYtR2bduhi3mGFI8">Direct link to MP4</a>
 </details>
 
 ## Features
