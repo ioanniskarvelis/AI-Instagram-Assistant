@@ -1,0 +1,11 @@
+flask
+gunicorn
+requests
+redis
+sentence-transformers
+pinecone
+openai
+google-api-python-client
+google-auth-oauthlib
+pytz
+python-dotenv

@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.env.*
+.venv/
+venv/
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+ruff_cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs and temp
+*.log
+logs/
+tmp/
+/tmp/
+
+# Credentials and tokens
+credentials.json
+client_secret.json
+token.json
+.google-credentials/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# Cache
+.cache/
