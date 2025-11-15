@@ -26,6 +26,9 @@ logs/
 tmp/
 /tmp/
 
+# Backup files
+*.backup
+
 # Credentials and tokens
 credentials.json
 client_secret.json
