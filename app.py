@@ -11,9 +11,11 @@ from pinecone import Pinecone
 from datetime import datetime
 import threading
 from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from calendar_functions import (
-    check_availability, 
-    create_booking, 
+    check_availability,
+    create_booking,
     find_booking_by_phone,
     cancel_booking,
     reschedule_booking,
@@ -22,12 +24,30 @@ from calendar_functions import (
     get_calendar_service
 )
 import random
+import atexit
 
 APP_LOG_FILE = os.getenv("APP_LOG_FILE", "app.log")
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 log_file = open(APP_LOG_FILE, "a", encoding="utf-8")
+
+# Register cleanup function to close log file on shutdown
+def cleanup_resources():
+    """Close open file handles and other resources"""
+    if log_file and not log_file.closed:
+        log_file.close()
+
+atexit.register(cleanup_resources)
+
 load_dotenv()
 app = Flask(__name__)
+
+# Initialize rate limiter
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri=os.getenv("REDIS_URL") or f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}"
+)
 
 # Redis configuration
 redis_client = None  # Initialize at module level
@@ -194,6 +214,7 @@ def terms():
         return "Terms of Service not available.", 404
 
 @app.route('/webhook', methods = ['GET', 'POST'])
+@limiter.limit("100 per hour")  # Stricter limit for webhook endpoint
 def webhook():
     if request.method == 'POST':
         try:

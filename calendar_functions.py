@@ -9,6 +9,15 @@ import os
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 import redis
+from validation import (
+    validate_phone_number,
+    validate_date,
+    validate_time,
+    validate_duration,
+    validate_customer_name,
+    validate_event_id,
+    ValidationError
+)
 
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -302,7 +311,7 @@ def check_availability(service, start_date, end_date=None, duration_hours=None, 
 def create_booking(service, customer_name, customer_phone, date, time, duration_hours=None, tattoo_price=None, tattoo_description="", user_id=None, thread_id=None):
     """
     Create a new booking in the calendar
-    
+
     Args:
         service: Google Calendar service object
         customer_name: Customer's name
@@ -316,15 +325,18 @@ def create_booking(service, customer_name, customer_phone, date, time, duration_
     Returns:
         Created event object or None if error
     """
-    # Calculate duration based on price if not explicitly provided
-    if duration_hours is None:
-        if tattoo_price is None:
-            duration_hours = 1  # Default to 1 hour if neither is provided
-        else:
-            # Formula: price / 50 = number of half-hours, so price / 100 = hours
-            raw_duration = tattoo_price / 100
-            duration_hours = round_duration_to_5_minutes(raw_duration)
-    
+    # Validate inputs
+    try:
+        customer_name = validate_customer_name(customer_name)
+        customer_phone = validate_phone_number(customer_phone)
+        validate_date(date)  # Validate date format and not in past
+        validate_time(time)  # Validate time format and business hours
+        duration_hours = validate_duration(duration_hours, tattoo_price)
+    except ValidationError as e:
+        print(f'Validation error in create_booking: {str(e)}', file=log_file)
+        log_file.flush()
+        return None
+
     try:
         # Parse date and time
         start_datetime = datetime.strptime(f"{date} {time}", '%Y-%m-%d %H:%M')
@@ -377,14 +389,22 @@ def create_booking(service, customer_name, customer_phone, date, time, duration_
 def find_booking_by_phone(service, phone_number):
     """
     Find a booking by customer phone number
-    
+
     Args:
         service: Google Calendar service object
         phone_number: Customer's phone number
-    
+
     Returns:
         List of matching events
     """
+    # Validate phone number
+    try:
+        phone_number = validate_phone_number(phone_number)
+    except ValidationError as e:
+        print(f'Validation error in find_booking_by_phone: {str(e)}', file=log_file)
+        log_file.flush()
+        return []
+
     try:
         # Search in the next 3 months
         time_min = datetime.now(ATHENS_TZ)
@@ -416,14 +436,22 @@ def find_booking_by_phone(service, phone_number):
 def cancel_booking(service, event_id):
     """
     Cancel a booking
-    
+
     Args:
         service: Google Calendar service object
         event_id: Google Calendar event ID
-    
+
     Returns:
         True if successful, False otherwise
     """
+    # Validate event ID
+    try:
+        event_id = validate_event_id(event_id)
+    except ValidationError as e:
+        print(f'Validation error in cancel_booking: {str(e)}', file=log_file)
+        log_file.flush()
+        return False
+
     try:
         service.events().delete(calendarId='primary', eventId=event_id).execute()
         return True
@@ -434,7 +462,7 @@ def cancel_booking(service, event_id):
 def reschedule_booking(service, event_id, new_date, new_time, duration_hours=None, tattoo_price=None):
     """
     Reschedule an existing booking
-    
+
     Args:
         service: Google Calendar service object
         event_id: Google Calendar event ID
@@ -442,10 +470,22 @@ def reschedule_booking(service, event_id, new_date, new_time, duration_hours=Non
         new_time: New time in format 'HH:MM'
         duration_hours: Duration of appointment in hours (if not provided, calculated from tattoo_price or existing duration)
         tattoo_price: Estimated price of tattoo in euros (used to calculate duration if duration_hours not provided)
-    
+
     Returns:
         Updated event object or None if error
     """
+    # Validate inputs
+    try:
+        event_id = validate_event_id(event_id)
+        validate_date(new_date)
+        validate_time(new_time)
+        if duration_hours is not None or tattoo_price is not None:
+            duration_hours = validate_duration(duration_hours, tattoo_price)
+    except ValidationError as e:
+        print(f'Validation error in reschedule_booking: {str(e)}', file=log_file)
+        log_file.flush()
+        return None
+
     try:
         # Get the existing event
         event = service.events().get(calendarId='primary', eventId=event_id).execute()
