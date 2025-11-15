@@ -1,11 +1,8 @@
 import json
 from flask import Flask, request
-import requests
 import time
 import os
 import redis
-import base64
-from openai import OpenAI  # Updated import for OpenAI
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone
 from datetime import datetime
@@ -24,21 +21,55 @@ from calendar_functions import (
     get_calendar_service
 )
 import random
-import atexit
 
-APP_LOG_FILE = os.getenv("APP_LOG_FILE", "app.log")
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-log_file = open(APP_LOG_FILE, "a", encoding="utf-8")
+# Import new services and utilities
+from src.services.openai_service import OpenAIService
+from src.services.messaging_service import MessagingService
+from src.utils.logging_utils import configure_logging, get_logger, LoggerAdapter
+from src.utils.redis_utils import init_redis_client, test_redis_connection
+from src.utils.constants import (
+    MAX_HISTORY_LENGTH,
+    GRACE_WINDOW_SECONDS,
+    MAX_RETRY_ATTEMPTS,
+    MESSAGE_MAX_LENGTH,
+    PROCESSING_LOCK_TTL,
+    CONVERSATION_TTL_SECONDS,
+    QUEUE_TTL_SECONDS,
+    MUTE_DURATION_SECONDS,
+    OPENAI_MODEL_DEFAULT,
+    OPENAI_MODEL_VISION,
+    OPENAI_MODEL_CLASSIFY,
+    OPENAI_TEMPERATURE_DEFAULT,
+    OPENAI_TEMPERATURE_PRICING,
+    OPENAI_TEMPERATURE_CLASSIFY,
+    CONVERSATIONS_INDEX_NAME,
+    PRICING_INDEX_NAME,
+    SIMILARITY_THRESHOLD,
+    TOP_K_SIMILAR,
+    INTENT_PRIORITIES,
+    DEFAULT_ADMIN_SENDER_IDS,
+    REACTION_BOT_SENDER_ID_DEFAULT,
+    PRICING_PROMPT_FILE,
+    BOOKING_PROMPT_FILE,
+    INFORMATION_PROMPT_FILE,
+    FOLLOWUP_PROMPT_FILE,
+    CLASSIFICATION_PROMPT_FILE
+)
 
-# Register cleanup function to close log file on shutdown
-def cleanup_resources():
-    """Close open file handles and other resources"""
-    if log_file and not log_file.closed:
-        log_file.close()
-
-atexit.register(cleanup_resources)
-
+# Load environment variables
 load_dotenv()
+
+# Configuration
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
+# Configure structured logging
+configure_logging(debug=DEBUG)
+logger = get_logger("app")
+
+# Create backwards-compatible log file adapter
+log_file = LoggerAdapter("app")
+
+# Initialize Flask app
 app = Flask(__name__)
 
 # Initialize rate limiter
@@ -49,125 +80,37 @@ limiter = Limiter(
     storage_uri=os.getenv("REDIS_URL") or f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}"
 )
 
-# Redis configuration
-redis_client = None  # Initialize at module level
-
-def init_redis_client():
-    """Initialize the Redis client using environment variables or Redis URL."""
-    global redis_client
-    
-    # Load from environment
-    redis_url = os.getenv('REDIS_URL', '')
-    redis_host = os.getenv('REDIS_HOST', '')
-    redis_port = int(os.getenv('REDIS_PORT', '6379')) if os.getenv('REDIS_PORT') else None
-    redis_username = os.getenv('REDIS_USERNAME', '')
-    redis_password = os.getenv('REDIS_PASSWORD', '')
-    
-    try:
-        # Option 1: Use Redis URL (preferred)
-        if redis_url:
-            print("Connecting to Redis using URL...")
-            redis_client = redis.from_url(
-                redis_url,
-                decode_responses=True,
-                socket_timeout=30,
-                socket_connect_timeout=30,
-                retry_on_timeout=True,
-                retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError],
-                health_check_interval=30
-            )
-        
-        # Option 2: Use host/port configuration
-        elif redis_host:
-            print(f"Connecting to Redis at {redis_host}:{redis_port}...")
-            redis_config = {
-                'host': redis_host,
-                'port': redis_port or 6379,
-                'username': redis_username or None,
-                'password': redis_password or None,
-                'db': 0,
-                'decode_responses': True,
-                'socket_timeout': 30,
-                'socket_connect_timeout': 30,
-                'retry_on_timeout': True,
-                'retry_on_error': [redis.exceptions.ConnectionError, redis.exceptions.TimeoutError],
-                'health_check_interval': 30
-            }
-            
-            # Enable SSL if REDIS_SSL is true
-            if os.getenv('REDIS_SSL', 'false').lower() == 'true':
-                redis_config['ssl'] = True
-                redis_config['ssl_cert_reqs'] = None
-            
-            redis_client = redis.Redis(**redis_config)
-        
-        else:
-            raise ValueError("Neither REDIS_URL nor REDIS_HOST is configured")
-            
-        return redis_client
-            
-    except Exception as e:
-        print(f"Failed to create Redis client: {str(e)}")
-        raise
-
-# Initialize Redis client
-init_redis_client()
-
-def test_redis_connection():
-    """Test Redis connection and log status"""
-    try:
-        # Test basic connectivity
-        redis_client.ping()
-        print("✅ Redis connection successful!")
-        
-        # Test basic operations
-        test_key = "health_check"
-        redis_client.set(test_key, "ok", ex=10)
-        value = redis_client.get(test_key)
-        redis_client.delete(test_key)
-        
-        if value == "ok":
-            print("✅ Redis read/write operations working!")
-            return True
-        else:
-            print("❌ Redis read/write test failed")
-            return False
-            
-    except redis.exceptions.ConnectionError as e:
-        print(f"❌ Redis connection failed: {str(e)}")
-        return False
-    except Exception as e:
-        print(f"❌ Redis test failed: {str(e)}")
-        return False
+# Initialize Redis client using utility
+redis_client = init_redis_client()
 
 # Test Redis connection on startup (only in DEBUG)
 if DEBUG:
-    test_redis_connection()
+    test_redis_connection(redis_client)
 
-USER_ACCESS_TOKEN = os.getenv("IG_USER_ACCESS_TOKEN", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-MAX_HISTORY_LENGTH = int(os.getenv("MAX_HISTORY_LENGTH", "20"))
-GRACE_WINDOW_SECONDS = int(os.getenv("GRACE_WINDOW_SECONDS", "20"))
+# Environment-specific configuration
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
 PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
-CONVERSATIONS_INDEX_NAME = os.getenv("PINECONE_CONVERSATIONS_INDEX", "tattoo-conversations")
-PRICING_INDEX_NAME = os.getenv("PINECONE_PRICING_INDEX", "tattoo-pricing")
 
-ADMIN_SENDER_IDS = set(filter(None, [s.strip() for s in os.getenv("ADMIN_SENDER_IDS", "1018827777120359,6815817155197102").split(",")]))
-REACTION_BOT_SENDER_ID = os.getenv("REACTION_BOT_SENDER_ID", "17841463333962356")
+# Admin configuration (prefer env vars, fallback to defaults)
+admin_ids_str = os.getenv("ADMIN_SENDER_IDS", ",".join(DEFAULT_ADMIN_SENDER_IDS))
+ADMIN_SENDER_IDS = set(filter(None, [s.strip() for s in admin_ids_str.split(",")]))
+REACTION_BOT_SENDER_ID = os.getenv("REACTION_BOT_SENDER_ID", REACTION_BOT_SENDER_ID_DEFAULT)
 
+# Initialize external services
 pc = Pinecone(api_key=PINECONE_API_KEY)
 model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
 
-# Initialize the OpenAI client
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Initialize OpenAI service (replaces direct client)
+openai_service = OpenAIService()
+
+# Initialize Instagram messaging service
+messaging_service = MessagingService()
 
 # Initialize Google Calendar
 creds = authenticate_google()
 service = get_calendar_service(creds)
 
-
-url = "https://graph.instagram.com/v22.0/me/messages"
+logger.info("application_initialized", debug=DEBUG)
 
 @app.route('/')
 def hello_world():
@@ -269,7 +212,7 @@ def webhook():
                                             image_path = download_image(image_url, sender_id)
                                             image_analysis = f"Εικόνα {i}: " + get_image_analysis_reply(image_path) + "\n"                                      
                                             redis_client.rpush(f"image_analysis:{sender_id}", image_analysis)
-                                            redis_client.expire(f"image_analysis:{sender_id}", 60*10)
+                                            redis_client.expire(f"image_analysis:{sender_id}", QUEUE_TTL_SECONDS)
                                             os.remove(image_path)
                                             redis_client.decr(pending_key)
                                         except Exception as img_error:
@@ -325,29 +268,10 @@ def send_instagram_message(recipient_id, message_text):
     """
     Send a message to an Instagram user using the Graph API
     This will only work if the user has messaged your business account first
+
+    NOTE: This is now a wrapper around MessagingService for backwards compatibility
     """
-    headers = {
-        "Authorization": f"Bearer {USER_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    # Note the correct format - message is a property, not a string with a colon
-    payload = {
-        "recipient": {
-            "id": recipient_id
-        },
-        "message": {
-            "text": message_text
-        }
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        result = response.json()
-        print(f"Message API response: {json.dumps(result, indent=4)}")
-        return result
-    except Exception as e:
-        print(f"Error sending message: {str(e)}")
-        return {"error": str(e)}
+    return messaging_service.send_message(recipient_id, message_text)
 
 # Define OpenAI function schemas
 CALENDAR_FUNCTIONS = [
@@ -614,7 +538,7 @@ def save_convo_context(user_id, new_entry):
         context = get_convo_context(user_id)
         context.append(new_entry)
         context = context[-MAX_HISTORY_LENGTH:]  # keep last messages according to MAX_HISTORY_LENGTH
-        redis_client.setex(f"chat:{user_id}", 60*60*24*7, json.dumps(context))  # 7-day TTL
+        redis_client.setex(f"chat:{user_id}", CONVERSATION_TTL_SECONDS, json.dumps(context))
     except redis.exceptions.ConnectionError as e:
         print(f"Redis connection error in save_convo_context: {str(e)}", file=log_file)
         log_file.flush()
@@ -624,7 +548,7 @@ def save_convo_context(user_id, new_entry):
             context = get_convo_context(user_id)
             context.append(new_entry)
             context = context[-MAX_HISTORY_LENGTH:]
-            redis_client.setex(f"chat:{user_id}", 60*60*24*7, json.dumps(context))
+            redis_client.setex(f"chat:{user_id}", CONVERSATION_TTL_SECONDS, json.dumps(context))
         except Exception as reconnect_error:
             print(f"Failed to save conversation after reconnection: {str(reconnect_error)}", file=log_file)
             log_file.flush()
@@ -632,33 +556,13 @@ def save_convo_context(user_id, new_entry):
         print(f"Error saving conversation context: {str(e)}", file=log_file)
         log_file.flush()
 
-# def download_image(image_url, user_id):
-#     response = requests.get(image_url)
-#     image_path = f"/tmp/{user_id}_tattoo.jpg"
-#     with open(image_path, 'wb') as f:
-#         f.write(response.content)
-#     return image_path
-
-import uuid
-# ...existing code...
-
 def download_image(image_url, user_id):
-    # Define a directory for temporary files
-    temp_dir = os.path.join(os.getcwd(), "tmp")
-    os.makedirs(temp_dir, exist_ok=True)  # Ensure the directory exists
+    """
+    Download an image from Instagram
 
-    # Generate a unique filename using timestamp-based UUID
-    unique_id = uuid.uuid1().hex  # uuid1 uses timestamp and MAC address
-    image_path = os.path.join(temp_dir, f"{user_id}_tattoo_{unique_id}.jpg")
-
-    # Download and save the image
-    response = requests.get(image_url)
-    if response.status_code == 200:
-        with open(image_path, 'wb') as f:
-            f.write(response.content)
-        return image_path
-    else:
-        raise Exception(f"Failed to download image. Status code: {response.status_code}")
+    NOTE: This is now a wrapper around MessagingService for backwards compatibility
+    """
+    return messaging_service.download_image(image_url, user_id)
 
 def get_openai_call_for_intent(context, intents_list, user_id, text_messages):
     """
@@ -961,8 +865,9 @@ def get_openai_call_for_intent(context, intents_list, user_id, text_messages):
     if tools:
         api_params["tools"] = tools
         api_params["tool_choice"] = "auto"
-    
-    return client.chat.completions.create(**api_params)
+
+    # Use OpenAI service instead of direct client
+    return openai_service.create_chat_completion(**api_params)
 
 def retrieve_similar_conversations(query, index=None, top_k=3, intent_data=None):
     """
@@ -1098,32 +1003,32 @@ def get_assistant_reply(user_id, complete_message, text_messages):
             context.extend(function_results)
             
             # Make another API call to potentially make more function calls or get final response
-            response = client.chat.completions.create(
+            response = openai_service.create_chat_completion(
                 model="gpt-4o-2024-11-20",
                 messages=[{"role": "system", "content": """
                     Απαντάς σε DM πελατών του 210tattoo. Χρησιμοποίησες τις λειτουργίες ημερολογίου και τώρα πρέπει να απαντήσεις στον πελάτη με βάση τα αποτελέσματα.
-                    
+
                     Γράφεις πάντα στα ελληνικά.
                     Πάντα στο τέλος του μηνύματος να βάζεις τα emoji \"❤️🐼\".
-                    
+
                     Αν το ραντεβού δημιουργήθηκε ή επιβεβαιώθηκε επιτυχώς:
                     - Επιβεβαίωσε ΜΟΝΟ την ημερομηνία και ώρα
                     - Πες ότι θα λάβει υπενθύμιση μια ώρα πριν
                     - ΜΗΝ αναφέρεις την εκτιμώμενη διάρκεια του ραντεβού
                     - ΜΗΝ αναφέρεις το κόστος που συμφωνήσατε
-                    
+
                     Αν υπάρχουν διαθέσιμες ώρες:
                     - Παρουσίασέ τες όμορφα και ρώτα ποια προτιμούν
                     - ΜΗΝ αναφέρεις το εύρος ημερομηνιών που έψαξες (end_date)
                     - ΜΗΝ αναφέρεις την εκτιμώμενη διάρκεια του ραντεβού
                     - ΜΗΝ αναφέρεις το κόστος που συμφωνήσατε
-                    
+
                     Για ακυρώσεις ραντεβού:
                     - Αν μόλις έγινε find_customer_booking και βρέθηκαν ραντεβού, προχώρησε ΑΜΕΣΩΣ να κάνεις cancel_tattoo_booking με το πρώτο/μοναδικό event_id
                     - Αν υπάρχουν πολλά ραντεβού, ακύρωσε το πιο πρόσφατο ή ρώτησε τον πελάτη ποιο θέλει
                     - Αν ακυρώθηκε επιτυχώς, επιβεβαίωσε την ακύρωση ευγενικά
                     - Αν δεν βρέθηκαν ραντεβού, ρώτησε για τον σωστό αριθμό τηλεφώνου ή ημερομηνία ραντεβού
-                    
+
                     Αν κάτι πήγε στραβά, ενημέρωσε ευγενικά και πρότεινε εναλλακτικές.
                 """}] + context,
                 temperature=1.0,
@@ -1175,25 +1080,17 @@ FORMAT παραδείγματος:
 '''
 
 def get_image_analysis_reply(image_path):
-    with open(image_path, "rb") as image_file:
-        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+    """
+    Analyze tattoo image using OpenAI vision API
 
-    # Updated to use the new client-based API for image analysis
-    response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL_VISION", "gpt-4o-mini"),
-        messages=[
-            {"role": "system", "content": system_prompt_2},
-            {
-                "role": "user", 
-                "content": [
-                    {"type": "text", "text": "Ανέλυσε την εικόνα του τατουάζ."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded_image}"}}
-                ]
-            }
-        ],
-        temperature=0.3
+    NOTE: Now uses OpenAIService for better error handling and retry logic
+    """
+    return openai_service.analyze_image(
+        image_path=image_path,
+        system_prompt=system_prompt_2,
+        user_prompt="Ανέλυσε την εικόνα του τατουάζ.",
+        temperature=OPENAI_TEMPERATURE_PRICING
     )
-    return response.choices[0].message.content.strip()
 
 def schedule_processing(user_id):
     """Schedule message processing after grace period"""
@@ -1234,14 +1131,16 @@ def classify_intent(message, previous_assistant_message=None):
             )
         else:
             message_with_context = f"[CURRENT_DATE: {current_date}]\n{message}"
-        print(message_with_context)
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL_CLASSIFY", "gpt-4o-mini"),
+
+        logger.info("classifying_intent", message_length=len(message))
+
+        response = openai_service.create_chat_completion(
+            model=OPENAI_MODEL_CLASSIFY,
             messages=[
                 {"role": "system", "content": classification_prompt},
                 {"role": "user", "content": message_with_context}
             ],
-            temperature=0.0,
+            temperature=OPENAI_TEMPERATURE_CLASSIFY,
             response_format={"type": "json_object"}
         )
 
@@ -1318,41 +1217,21 @@ def process_user_messages(user_id):
         # Get AI reply
         bot_reply = get_assistant_reply(user_id, combined_message, text_messages)
         
-        # Send the reply (split if too long)
-        max_length = 800
-        if len(bot_reply) > max_length:
-            # Split into chunks without breaking words
-            chunks = []
-            text = bot_reply
-            while len(text) > max_length:
-                # Find last newline or space before max_length
-                split_at = text.rfind('\n', 0, max_length)
-                if split_at == -1:
-                    split_at = text.rfind(' ', 0, max_length)
-                if split_at == -1:
-                    split_at = max_length
-                chunks.append(text[:split_at].strip())
-                text = text[split_at:].strip()
-            if text:
-                chunks.append(text)
-            responses = []
-            for chunk in chunks:
-                response = send_instagram_message(user_id, chunk)
-                responses.append(response)
-            # Store only the full reply in context
-            save_convo_context(user_id, {
-                "role": "assistant",
-                "content": bot_reply
-            })
-            print(f"Response to messages: {json.dumps(responses, indent=4)}")
-        else:
-            # Send normally
-            response = send_instagram_message(user_id, bot_reply)
-            save_convo_context(user_id, {
-                "role": "assistant",
-                "content": bot_reply
-            })
-            print(f"Response to messages: {json.dumps(response, indent=4)}")
+        # Send the reply using messaging service (handles long messages automatically)
+        responses = messaging_service.send_long_message(user_id, bot_reply)
+
+        # Store the full reply in context
+        save_convo_context(user_id, {
+            "role": "assistant",
+            "content": bot_reply
+        })
+
+        logger.info(
+            "message_sent_to_user",
+            user_id=user_id,
+            message_length=len(bot_reply),
+            chunks_sent=len(responses)
+        )
         
         # Clear the image pending flag
         redis_client.delete(f"image_pending:{user_id}")
@@ -1369,7 +1248,7 @@ def acquire_processing_lock(user_id):
     lock_key = f"processing_lock:{user_id}"
     # Set the lock with NX (only if it doesn't exist)
     # and an expiration of 30 seconds to prevent deadlocks
-    return redis_client.set(lock_key, "1", nx=True, ex=30)
+    return redis_client.set(lock_key, "1", nx=True, ex=PROCESSING_LOCK_TTL)
 
 def release_processing_lock(user_id):
     """Release the processing lock"""
@@ -1390,7 +1269,7 @@ def queue_user_message(user_id, message_data, has_image=False):
             "has_image": has_image
         }
         redis_client.lpush(queue_key, json.dumps(message_with_timestamp))
-        redis_client.expire(queue_key, 60*10)  # 10 minutes expiration
+        redis_client.expire(queue_key, QUEUE_TTL_SECONDS)
         
         # Schedule processing after grace period
         schedule_processing(user_id)
@@ -1419,7 +1298,7 @@ def clear_message_queue(user_id):
 # ---------------------------------------------------------------------------
 # Human-in-the-loop: mute automatic replies when a heart reaction is received
 # ---------------------------------------------------------------------------
-def mute_user(user_id, duration_seconds=60*60*2):
+def mute_user(user_id, duration_seconds=MUTE_DURATION_SECONDS):
     """Mute automated replies for a user for the specified duration (default 2 h)."""
     redis_client.setex(f"mute:{user_id}", duration_seconds, "1")
 
