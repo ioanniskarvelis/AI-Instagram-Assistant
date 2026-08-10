@@ -1,11 +1,4 @@
-flask
-gunicorn
-requests
-redis
-sentence-transformers
-pinecone
-openai
-google-api-python-client
-google-auth-oauthlib
-pytz
-python-dotenv
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+pydantic-settings==2.7.1
