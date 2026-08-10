@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from fastapi import FastAPI
 
@@ -10,6 +11,7 @@ def create_app() -> FastAPI:
     logging.basicConfig(
         level=settings.log_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
     )
 
     app = FastAPI(title="Tattoo Studio Instagram Assistant", version="1.0.0")
