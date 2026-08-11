@@ -9,10 +9,13 @@ logger = logging.getLogger(__name__)
 GRAPH_BASE = "https://graph.instagram.com"
 REQUEST_TIMEOUT_SECONDS = 10.0
 
-# Maximum characters the Graph API accepts in a text DM. Confirmed against Meta's
-# Instagram Messaging documentation; the API rejects longer messages outright, so
-# an over-long generated reply is caught before it is sent rather than after.
-MAX_MESSAGE_CHARS = 1000
+# Maximum UTF-8 encoded bytes the Graph API accepts in a text DM. Meta's
+# Instagram Messaging documentation states message text "must be UTF-8 and be
+# 1000 bytes or less" (developers.facebook.com/docs/messenger-platform/
+# instagram/features/send-message). The limit is bytes, not characters — a
+# 1000-character Greek reply is ~2000 bytes — so the guard must measure the
+# encoded length, or the API rejects a message that looked fine locally.
+MAX_MESSAGE_BYTES = 1000
 
 
 async def send_text(recipient_id: str, text: str) -> bool:

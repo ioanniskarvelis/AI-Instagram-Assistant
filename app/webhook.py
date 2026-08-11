@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from app.config import get_settings
 from app.history import Turn, append, recent
-from app.instagram import MAX_MESSAGE_CHARS, send_text
+from app.instagram import MAX_MESSAGE_BYTES, send_text
 from app.llm import generate_reply
 from app.schemas import WebhookPayload
 
@@ -78,17 +78,19 @@ async def receive(request: Request) -> Response:
             window = [Turn(role="user", text=text)]
 
         reply = await generate_reply(window)
-        if reply is not None and len(reply) > MAX_MESSAGE_CHARS:
-            # The Graph API rejects over-long text outright. Truncating would cut
-            # a customer off mid-sentence, so the canned acknowledgement is the
-            # better degradation.
-            logger.warning(
-                "Generated reply for %s was %d chars, over the %d limit",
-                sender_id,
-                len(reply),
-                MAX_MESSAGE_CHARS,
-            )
-            reply = None
+        if reply is not None:
+            reply_bytes = len(reply.encode("utf-8"))
+            if reply_bytes > MAX_MESSAGE_BYTES:
+                # The Graph API rejects over-long text outright. Truncating
+                # would cut a customer off mid-sentence, so the canned
+                # acknowledgement is the better degradation.
+                logger.warning(
+                    "Generated reply for %s was %d bytes, over the %d byte limit",
+                    sender_id,
+                    reply_bytes,
+                    MAX_MESSAGE_BYTES,
+                )
+                reply = None
         if reply is None:
             reply = settings.canned_reply
 

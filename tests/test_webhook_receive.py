@@ -139,9 +139,17 @@ def test_generation_failure_falls_back_to_canned_reply(client):
 
 @respx.mock
 def test_overlong_generated_reply_falls_back_to_canned(client):
-    from app.instagram import MAX_MESSAGE_CHARS
+    from app.instagram import MAX_MESSAGE_BYTES
 
-    _mock_llm("ω" * (MAX_MESSAGE_CHARS + 1))
+    # "ω" encodes to 2 bytes in UTF-8. This length is chosen to exceed the
+    # byte limit while staying under the character count of the byte limit,
+    # so this reply would sail past a character-counting guard (it's fewer
+    # than MAX_MESSAGE_BYTES characters) and only trips a byte-counting one.
+    overlong = "ω" * (MAX_MESSAGE_BYTES // 2 + 1)
+    assert len(overlong) < MAX_MESSAGE_BYTES
+    assert len(overlong.encode("utf-8")) > MAX_MESSAGE_BYTES
+
+    _mock_llm(overlong)
     route = respx.post(ENDPOINT).mock(
         return_value=httpx.Response(200, json={"message_id": "mid.1"})
     )
