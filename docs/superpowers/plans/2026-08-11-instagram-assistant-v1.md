@@ -44,7 +44,7 @@ Clears the old codebase out of the index, lays down the package skeleton, and de
   - `app.main.app` — module-level instance for uvicorn
   - `tests.conftest` fixtures `client` (a `TestClient`) and `env`, plus constants `VERIFY_TOKEN`, `ACCESS_TOKEN`, `APP_SECRET`, `CANNED_REPLY` and helper `sign(body: bytes) -> str`
 
-- [ ] **Step 1: Stage removal of the old codebase**
+- [x] **Step 1: Stage removal of the old codebase**
 
 The previous implementation is already deleted from disk but still tracked. Staging the deletions makes the reset explicit.
 
@@ -57,7 +57,7 @@ git status --short
 
 Expected: deletions of `app.py`, `calendar_functions.py`, `prompts/*`, `requirements.txt`, `privacy_policy.html`, `terms.html`, `README.md`, `LICENSE`, `.gitattributes`, `.gitignore` are staged. Do not commit yet.
 
-- [ ] **Step 2: Create dependency and tooling files**
+- [x] **Step 2: Create dependency and tooling files**
 
 `requirements.txt`:
 ```
@@ -99,7 +99,7 @@ Thumbs.db
 .vscode/
 ```
 
-- [ ] **Step 3: Install dependencies**
+- [x] **Step 3: Install dependencies**
 
 ```bash
 python -m venv .venv
@@ -108,7 +108,7 @@ python -m venv .venv
 
 On PowerShell the interpreter path is `.venv\Scripts\python.exe`. All later `pytest` invocations assume this virtualenv is active.
 
-- [ ] **Step 4: Write the failing config test**
+- [x] **Step 4: Write the failing config test**
 
 `tests/__init__.py` is empty. `tests/conftest.py`:
 
@@ -185,12 +185,12 @@ def test_missing_required_setting_raises(monkeypatch):
         Settings(_env_file=None)
 ```
 
-- [ ] **Step 5: Run the test to verify it fails**
+- [x] **Step 5: Run the test to verify it fails**
 
 Run: `pytest tests/test_config.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.config'`
 
-- [ ] **Step 6: Implement the config module**
+- [x] **Step 6: Implement the config module**
 
 `app/__init__.py` is empty. `app/config.py`:
 
@@ -227,12 +227,12 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-- [ ] **Step 7: Run the config test to verify it passes**
+- [x] **Step 7: Run the config test to verify it passes**
 
 Run: `pytest tests/test_config.py -v`
 Expected: PASS (3 tests)
 
-- [ ] **Step 8: Write the failing health test**
+- [x] **Step 8: Write the failing health test**
 
 `tests/test_health.py`:
 
@@ -243,17 +243,18 @@ def test_health_returns_ok(client):
     assert response.json() == {"status": "ok"}
 ```
 
-- [ ] **Step 9: Run it to verify it fails**
+- [x] **Step 9: Run it to verify it fails**
 
 Run: `pytest tests/test_health.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.main'`
 
-- [ ] **Step 10: Implement the app factory**
+- [x] **Step 10: Implement the app factory**
 
 `app/main.py`:
 
 ```python
 import logging
+import sys
 
 from fastapi import FastAPI
 
@@ -265,6 +266,7 @@ def create_app() -> FastAPI:
     logging.basicConfig(
         level=settings.log_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
     )
 
     app = FastAPI(title="Tattoo Studio Instagram Assistant", version="1.0.0")
@@ -279,14 +281,14 @@ def create_app() -> FastAPI:
 app = create_app()
 ```
 
-Note: `logging.basicConfig` with no handler argument writes to stderr, which the container runtime collects. No file handler is ever added.
+Note: `stream=sys.stdout` is explicit and required. `logging.basicConfig` defaults to **stderr**, which would violate the stdout-only global constraint — and on platforms such as Cloud Run, every stderr line is classified as ERROR severity, so INFO logs would surface as errors. It also keeps the app's logs on the same stream as uvicorn's access logs. No file handler is ever added.
 
-- [ ] **Step 11: Run the full suite**
+- [x] **Step 11: Run the full suite**
 
 Run: `pytest -v`
 Expected: PASS (4 tests)
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add -A
@@ -310,7 +312,7 @@ Models the nested payload so the route handler never inspects raw dictionaries.
   - `app.schemas.WebhookPayload.replyable_messages() -> list[tuple[str, str]]` — returns `(sender_id, text)` pairs for inbound text messages only
   - Supporting models `Participant`, `Message`, `MessagingEvent`, `Entry`
 
-- [ ] **Step 1: Write the failing schema tests**
+- [x] **Step 1: Write the failing schema tests**
 
 `tests/test_schemas.py`:
 
@@ -440,12 +442,12 @@ def test_payload_missing_object_is_rejected():
         WebhookPayload.model_validate({"entry": []})
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pytest tests/test_schemas.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.schemas'`
 
-- [ ] **Step 3: Implement the schemas**
+- [x] **Step 3: Implement the schemas**
 
 `app/schemas.py`:
 
@@ -506,12 +508,12 @@ class WebhookPayload(BaseModel):
         return replyable
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `pytest tests/test_schemas.py -v`
 Expected: PASS (6 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/schemas.py tests/test_schemas.py
@@ -534,7 +536,7 @@ The only module that knows how replies are sent.
   - `app.instagram.send_text(recipient_id: str, text: str) -> bool` — async; returns `True` on success, `False` on a Graph API error or transport failure. Never raises.
   - `app.instagram.GRAPH_BASE` — `"https://graph.instagram.com"`
 
-- [ ] **Step 1: Write the failing client tests**
+- [x] **Step 1: Write the failing client tests**
 
 `tests/test_instagram.py`:
 
@@ -593,12 +595,12 @@ async def test_send_text_returns_false_on_transport_error():
     assert await send_text("SENDER_1", "hello") is False
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pytest tests/test_instagram.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.instagram'`
 
-- [ ] **Step 3: Implement the client**
+- [x] **Step 3: Implement the client**
 
 `app/instagram.py`:
 
@@ -647,12 +649,12 @@ async def send_text(recipient_id: str, text: str) -> bool:
 
 The access token goes in the `Authorization` header rather than a query string, keeping it out of URLs and any logs that record them.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `pytest tests/test_instagram.py -v`
 Expected: PASS (3 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/instagram.py tests/test_instagram.py
@@ -675,7 +677,7 @@ Meta's subscription handshake. Must work before any message can arrive.
 - Produces:
   - `app.webhook.router` — an `APIRouter` carrying `GET /webhook`. Task 5 adds `POST /webhook` to the same router.
 
-- [ ] **Step 1: Write the failing verification tests**
+- [x] **Step 1: Write the failing verification tests**
 
 `tests/test_webhook_verify.py`:
 
@@ -725,12 +727,12 @@ def test_verification_rejects_missing_params(client):
     assert response.status_code == 403
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pytest tests/test_webhook_verify.py -v`
 Expected: FAIL — all four return 404, since no `/webhook` route exists yet
 
-- [ ] **Step 3: Implement the verification route**
+- [x] **Step 3: Implement the verification route**
 
 `app/webhook.py`:
 
@@ -768,7 +770,7 @@ async def verify(request: Request) -> Response:
 
 `hmac.compare_digest` is used instead of `==` to compare the token in constant time.
 
-- [ ] **Step 4: Mount the router**
+- [x] **Step 4: Mount the router**
 
 In `app/main.py`, add the import below the existing `from app.config import get_settings` line:
 
@@ -782,17 +784,17 @@ and inside `create_app`, immediately after the `app = FastAPI(...)` line, add:
     app.include_router(router)
 ```
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run: `pytest tests/test_webhook_verify.py -v`
 Expected: PASS (4 tests)
 
-- [ ] **Step 6: Run the full suite**
+- [x] **Step 6: Run the full suite**
 
 Run: `pytest -v`
 Expected: PASS (17 tests)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/webhook.py app/main.py tests/test_webhook_verify.py
@@ -813,7 +815,7 @@ The core of v1: verify the signature, filter echoes, send the canned reply.
 - Consumes: `app.schemas.WebhookPayload`, `app.instagram.send_text`, `app.config.get_settings`, `tests.conftest.sign`
 - Produces: `POST /webhook` on the existing `app.webhook.router`; module-level helper `app.webhook._signature_valid(raw_body: bytes, header: str | None, app_secret: str) -> bool`
 
-- [ ] **Step 1: Write the failing receipt tests**
+- [x] **Step 1: Write the failing receipt tests**
 
 `tests/test_webhook_receive.py`:
 
@@ -932,12 +934,12 @@ def test_send_failure_still_returns_200(client):
 
 The final test encodes the constraint that matters most operationally: a failed send must not be reported to Meta as an error, or Meta retries a request that will fail identically.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pytest tests/test_webhook_receive.py -v`
 Expected: FAIL — all six return 405 Method Not Allowed, since only `GET /webhook` exists
 
-- [ ] **Step 3: Implement signature verification and the POST route**
+- [x] **Step 3: Implement signature verification and the POST route**
 
 In `app/webhook.py`, extend the imports at the top to:
 
@@ -997,17 +999,17 @@ async def receive(request: Request) -> Response:
 
 The inbound message text is logged only as a length, not as content — these are customers' private messages.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `pytest tests/test_webhook_receive.py -v`
 Expected: PASS (6 tests)
 
-- [ ] **Step 5: Run the full suite**
+- [x] **Step 5: Run the full suite**
 
 Run: `pytest -v`
 Expected: PASS (23 tests)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/webhook.py tests/test_webhook_receive.py
@@ -1027,7 +1029,7 @@ Packages the service and gives it a public URL for testing against real Instagra
 - Consumes: `app.main:app` (the uvicorn target), every environment variable from Task 1
 - Produces: a runnable image and `docker compose` services `api` and `tunnel`
 
-- [ ] **Step 1: Write the Dockerfile**
+- [x] **Step 1: Write the Dockerfile**
 
 ```dockerfile
 FROM python:3.12-slim
@@ -1056,7 +1058,7 @@ CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
 
 `exec` in the CMD makes uvicorn PID 1, so it receives `SIGTERM` on `docker stop` and shuts down cleanly instead of being killed after the timeout.
 
-- [ ] **Step 2: Write `.dockerignore`**
+- [x] **Step 2: Write `.dockerignore`**
 
 ```
 .git
@@ -1078,7 +1080,7 @@ requirements-dev.txt
 pytest.ini
 ```
 
-- [ ] **Step 3: Write `compose.yaml`**
+- [x] **Step 3: Write `compose.yaml`**
 
 ```yaml
 services:
@@ -1102,7 +1104,7 @@ services:
 
 The `dev` profile keeps the tunnel out of a plain `docker compose up`, so a production deployment starts only `api`.
 
-- [ ] **Step 4: Write `.env.example`**
+- [x] **Step 4: Write `.env.example`**
 
 ```
 # Meta webhook handshake — any string you choose; paste the same value into
@@ -1122,7 +1124,7 @@ LOG_LEVEL=INFO
 CANNED_REPLY=Γεια σου! Ελάβαμε το μήνυμά σου και θα σου απαντήσουμε σύντομα.
 ```
 
-- [ ] **Step 5: Write `README.md`**
+- [x] **Step 5: Write `README.md`**
 
 ````markdown
 # Tattoo Studio Instagram Assistant
@@ -1202,7 +1204,7 @@ Expected: the logs contain a `https://<something>.trycloudflare.com` URL.
 
 Then tear down: `docker compose --profile dev down`
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add Dockerfile .dockerignore compose.yaml .env.example README.md
@@ -1215,13 +1217,13 @@ git commit -m "feat: containerize the service with a dev tunnel"
 
 Run before declaring v1 complete:
 
-- [ ] `pytest -v` — 23 tests pass
+- [x] `pytest -v` — 23 tests pass
 - [ ] `docker build -t ig-assistant:v1 .` succeeds, image under 300MB
 - [ ] `docker compose --profile dev up --build` starts both services and prints a tunnel URL
 - [ ] Meta's webhook subscription completes against `<tunnel-url>/webhook` with your verify token
 - [ ] A DM from another Instagram account receives `CANNED_REPLY`
 - [ ] The assistant does not reply to its own outbound message (no reply loop)
-- [ ] `git status` is clean
+- [x] `git status` is clean
 
 The last three require real Meta credentials and a live Instagram account, so
 they are performed by the user, not by an automated worker.
