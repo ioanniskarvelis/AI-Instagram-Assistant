@@ -6,6 +6,8 @@ services:
       PORT: "${PORT:-3000}"
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - history:/srv/data
     restart: unless-stopped
 
   tunnel:
@@ -15,3 +17,6 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+volumes:
+  history:

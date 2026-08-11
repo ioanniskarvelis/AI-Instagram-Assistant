@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=3000
+    PORT=3000 \
+    DB_PATH=/srv/data/history.db
 
 WORKDIR /srv
 
@@ -10,7 +11,9 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN useradd --create-home --uid 1000 appuser
+RUN useradd --create-home --uid 1000 appuser \
+    && mkdir -p /srv/data \
+    && chown appuser:appuser /srv/data
 COPY --chown=appuser:appuser app ./app
 USER appuser
 

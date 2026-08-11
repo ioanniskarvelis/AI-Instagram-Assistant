@@ -1,7 +1,8 @@
 # Tattoo Studio Instagram Assistant
 
-Replies to Instagram DMs for the studio. v1 sends a fixed acknowledgement;
-LLM replies, tattoo quoting and calendar booking arrive in later slices.
+Replies to Instagram DMs for the studio using Claude, remembering the last
+20 messages of each conversation. Tattoo quoting (via Telegram Q&A with the
+owner) and calendar booking arrive in later slices.
 
 ## Running locally
 
@@ -33,3 +34,24 @@ python -m venv .venv
 ## Configuration
 
 See `.env.example` for every supported variable and its default.
+
+## Conversation storage
+
+Conversations are stored in SQLite, in a Docker named volume mounted at
+`/srv/data`. Messages are deleted automatically 20 days after they are written;
+a sweep runs at startup and every six hours thereafter.
+
+Two independent settings control this:
+
+- `HISTORY_RETENTION_DAYS` — how long a message survives on disk
+- `HISTORY_WINDOW_MESSAGES` — how many recent turns are sent to the model
+
+Customer message text is stored in plaintext for the retention period. If that
+matters for your deployment, encrypt the volume at rest.
+
+To count or clear stored conversations:
+
+```bash
+docker compose exec api python -c "import sqlite3; print(sqlite3.connect('/srv/data/history.db').execute('SELECT COUNT(*) FROM messages').fetchone()[0])"
+docker compose down -v   # removes the volume and all stored conversations
+```
