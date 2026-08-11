@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 GRAPH_BASE = "https://graph.instagram.com"
 REQUEST_TIMEOUT_SECONDS = 10.0
 
+# Maximum characters the Graph API accepts in a text DM. Confirmed against Meta's
+# Instagram Messaging documentation; the API rejects longer messages outright, so
+# an over-long generated reply is caught before it is sent rather than after.
+MAX_MESSAGE_CHARS = 1000
+
 
 async def send_text(recipient_id: str, text: str) -> bool:
     """Send a plain-text DM. Returns True on success, False on failure.

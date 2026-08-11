@@ -6,6 +6,28 @@ import respx
 from tests.conftest import CANNED_REPLY, sign
 
 ENDPOINT = "https://graph.instagram.com/v22.0/me/messages"
+ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
+
+GENERATED = "Καλησπέρα! Πες μου περισσότερα για το σχέδιο."
+
+
+def _anthropic_reply(text: str = GENERATED) -> dict:
+    return {
+        "id": "msg_01",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": [{"type": "text", "text": text}],
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+
+def _mock_llm(text: str = GENERATED):
+    return respx.post(ANTHROPIC_ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_anthropic_reply(text))
+    )
 
 
 def _body(message: dict) -> bytes:
@@ -35,25 +57,123 @@ def _post(client, body: bytes, signature: str | None = None):
     return client.post("/webhook", content=body, headers=headers)
 
 
+def _stored(sender_id: str) -> list[tuple[str, str]]:
+    from app import db
+
+    with db.connect() as conn:
+        return conn.execute(
+            "SELECT role, text FROM messages WHERE sender_id = ? ORDER BY id",
+            (sender_id,),
+        ).fetchall()
+
+
 @respx.mock
-def test_text_message_triggers_one_reply(client):
+def test_text_message_triggers_one_generated_reply(client):
+    _mock_llm()
     route = respx.post(ENDPOINT).mock(
         return_value=httpx.Response(200, json={"message_id": "mid.1"})
     )
 
-    body = _body({"mid": "m1", "text": "Γεια σας"})
-    response = _post(client, body)
+    response = _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
 
     assert response.status_code == 200
     assert route.call_count == 1
 
     sent = json.loads(route.calls.last.request.content)
     assert sent["recipient"]["id"] == "SENDER_1"
+    assert sent["message"]["text"] == GENERATED
+
+
+@respx.mock
+def test_both_turns_are_stored(client):
+    _mock_llm()
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    assert _stored("SENDER_1") == [
+        ("user", "Γεια σας"),
+        ("assistant", GENERATED),
+    ]
+
+
+@respx.mock
+def test_second_message_carries_the_first_exchange(client):
+    llm = _mock_llm()
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    _post(client, _body({"mid": "m1", "text": "πρώτο"}))
+    _post(client, _body({"mid": "m2", "text": "δεύτερο"}))
+
+    body = json.loads(llm.calls.last.request.content)
+    assert body["messages"] == [
+        {"role": "user", "content": "πρώτο"},
+        {"role": "assistant", "content": GENERATED},
+        {"role": "user", "content": "δεύτερο"},
+    ]
+
+
+@respx.mock
+def test_generation_failure_falls_back_to_canned_reply(client):
+    respx.post(ANTHROPIC_ENDPOINT).mock(
+        return_value=httpx.Response(
+            400,
+            json={"type": "error", "error": {"type": "invalid_request_error",
+                                             "message": "bad"}},
+        )
+    )
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    response = _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    assert response.status_code == 200
+    sent = json.loads(route.calls.last.request.content)
     assert sent["message"]["text"] == CANNED_REPLY
 
 
 @respx.mock
-def test_echo_message_triggers_no_reply(client):
+def test_overlong_generated_reply_falls_back_to_canned(client):
+    from app.instagram import MAX_MESSAGE_CHARS
+
+    _mock_llm("ω" * (MAX_MESSAGE_CHARS + 1))
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    response = _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    assert response.status_code == 200
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["message"]["text"] == CANNED_REPLY
+    # The rejected reply must not enter history either.
+    assert _stored("SENDER_1") == [
+        ("user", "Γεια σας"),
+        ("assistant", CANNED_REPLY),
+    ]
+
+
+@respx.mock
+def test_send_failure_stores_no_assistant_turn(client):
+    _mock_llm()
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(500, json={"error": "server error"})
+    )
+
+    response = _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    assert response.status_code == 200
+    assert _stored("SENDER_1") == [("user", "Γεια σας")]
+
+
+@respx.mock
+def test_echo_message_stores_nothing_and_sends_nothing(client):
+    llm = _mock_llm()
     route = respx.post(ENDPOINT).mock(return_value=httpx.Response(200, json={}))
 
     body = _body({"mid": "m2", "text": "our own reply", "is_echo": True})
@@ -61,6 +181,8 @@ def test_echo_message_triggers_no_reply(client):
 
     assert response.status_code == 200
     assert route.call_count == 0
+    assert llm.call_count == 0
+    assert _stored("SENDER_1") == []
 
 
 @respx.mock
@@ -100,11 +222,11 @@ def test_malformed_payload_returns_400(client):
 
 @respx.mock
 def test_send_failure_still_returns_200(client):
+    _mock_llm()
     respx.post(ENDPOINT).mock(
         return_value=httpx.Response(500, json={"error": "server error"})
     )
 
-    body = _body({"mid": "m5", "text": "hello"})
-    response = _post(client, body)
+    response = _post(client, _body({"mid": "m5", "text": "hello"}))
 
     assert response.status_code == 200

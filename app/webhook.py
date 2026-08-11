@@ -6,7 +6,9 @@ from fastapi import APIRouter, Request, Response, status
 from pydantic import ValidationError
 
 from app.config import get_settings
-from app.instagram import send_text
+from app.history import Turn, append, recent
+from app.instagram import MAX_MESSAGE_CHARS, send_text
+from app.llm import generate_reply
 from app.schemas import WebhookPayload
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,31 @@ async def receive(request: Request) -> Response:
 
     for sender_id, text in payload.replyable_messages():
         logger.info("Replying to %s (received %d chars)", sender_id, len(text))
-        await send_text(sender_id, settings.canned_reply)
+
+        await append(sender_id, "user", text)
+
+        window = await recent(sender_id, settings.history_window_messages)
+        if not window:
+            # Storage is unavailable; answer the message in front of us rather
+            # than going silent.
+            window = [Turn(role="user", text=text)]
+
+        reply = await generate_reply(window)
+        if reply is not None and len(reply) > MAX_MESSAGE_CHARS:
+            # The Graph API rejects over-long text outright. Truncating would cut
+            # a customer off mid-sentence, so the canned acknowledgement is the
+            # better degradation.
+            logger.warning(
+                "Generated reply for %s was %d chars, over the %d limit",
+                sender_id,
+                len(reply),
+                MAX_MESSAGE_CHARS,
+            )
+            reply = None
+        if reply is None:
+            reply = settings.canned_reply
+
+        if await send_text(sender_id, reply):
+            await append(sender_id, "assistant", reply)
 
     return Response(status_code=status.HTTP_200_OK)
