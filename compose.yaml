@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      PORT: "${PORT:-3000}"
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["dev"]
+    command: tunnel --no-autoupdate --url http://api:${PORT:-3000}
+    depends_on:
+      - api
+    restart: unless-stopped
