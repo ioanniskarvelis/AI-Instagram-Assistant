@@ -1164,7 +1164,7 @@ python -m venv .venv
 See `.env.example` for every supported variable and its default.
 ````
 
-- [ ] **Step 6: Build the image and check its size**
+- [x] **Step 6: Build the image and check its size**
 
 ```bash
 docker build -t ig-assistant:v1 .
@@ -1173,7 +1173,7 @@ docker image inspect ig-assistant:v1 --format "{{.Size}}"
 
 Expected: build succeeds; size is under 300000000 (300MB).
 
-- [ ] **Step 7: Verify the container runs as non-root and answers health checks**
+- [x] **Step 7: Verify the container runs as non-root and answers health checks**
 
 Use a throwaway env file rather than `.env`, so a real `.env` containing live
 secrets is never overwritten by this check.
@@ -1193,7 +1193,7 @@ The example values leave `IG_USER_ACCESS_TOKEN` and `IG_APP_SECRET` empty. Both
 are typed `str` with no minimum length, so startup succeeds and `/health`
 responds — this step checks packaging, not credentials.
 
-- [ ] **Step 8: Verify compose brings up the tunnel**
+- [x] **Step 8: Verify compose brings up the tunnel**
 
 ```bash
 docker compose --profile dev up --build -d
@@ -1218,8 +1218,8 @@ git commit -m "feat: containerize the service with a dev tunnel"
 Run before declaring v1 complete:
 
 - [x] `pytest -v` — 23 tests pass
-- [ ] `docker build -t ig-assistant:v1 .` succeeds, image under 300MB
-- [ ] `docker compose --profile dev up --build` starts both services and prints a tunnel URL
+- [x] `docker build -t ig-assistant:v1 .` succeeds, image under 300MB
+- [x] `docker compose --profile dev up --build` starts both services and prints a tunnel URL
 - [ ] Meta's webhook subscription completes against `<tunnel-url>/webhook` with your verify token
 - [ ] A DM from another Instagram account receives `CANNED_REPLY`
 - [ ] The assistant does not reply to its own outbound message (no reply loop)
