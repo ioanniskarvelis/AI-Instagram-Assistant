@@ -41,8 +41,8 @@ async def generate_reply(turns: list[Turn]) -> str | None:
     Meta whether or not generation worked, and the caller falls back to the
     canned reply.
     """
-    settings = get_settings()
     try:
+        settings = get_settings()
         response = await _client().messages.create(
             model=settings.anthropic_model,
             max_tokens=settings.llm_max_tokens,
