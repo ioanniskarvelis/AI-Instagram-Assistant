@@ -7,21 +7,28 @@ owner) and calendar booking arrive in later slices.
 ## Running locally
 
 ```bash
-cp .env.example .env   # then fill in IG_USER_ACCESS_TOKEN and IG_APP_SECRET
+cp .env.example .env   # then fill in IG_USER_ACCESS_TOKEN, IG_APP_SECRET, and CLOUDFLARE_TUNNEL_TOKEN
 docker compose --profile dev up --build
 ```
 
-The `tunnel` service prints a public HTTPS URL, for example
-`https://random-words-here.trycloudflare.com`. In the Meta app dashboard set:
+`CLOUDFLARE_TUNNEL_TOKEN` comes from a named Cloudflare Tunnel, set up once:
 
-- Callback URL: `<that URL>/webhook`
+1. In the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/),
+   go to **Networks > Tunnels > Create a tunnel**, choose **Docker**, and copy
+   the token from the generated run command (the `--token ...` value) into
+   `CLOUDFLARE_TUNNEL_TOKEN`.
+2. On the tunnel's **Public Hostname** tab, add a hostname (e.g.
+   `webhook.yourdomain.com`) pointing to service `HTTP` → `api:3000`. This
+   requires a domain on your Cloudflare account.
+
+That hostname is permanent — it survives container restarts, so the Meta app
+dashboard only needs to be configured once:
+
+- Callback URL: `https://<your hostname>/webhook`
 - Verify token: the value of `IG_VERIFY_TOKEN` in your `.env`
 
 Subscribe to the `messages` field, then DM the studio account from a different
 Instagram account. You should receive `CANNED_REPLY` back.
-
-Quick tunnel URLs change on every restart, so the callback URL must be updated
-in the Meta dashboard each time you restart the tunnel.
 
 ## Running the tests
 

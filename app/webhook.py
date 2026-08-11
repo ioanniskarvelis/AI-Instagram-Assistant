@@ -60,16 +60,25 @@ async def receive(request: Request) -> Response:
         logger.warning("Rejected webhook delivery with invalid signature")
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
+    logger.debug("Webhook body: %s", raw_body.decode("utf-8", errors="replace"))
+
     try:
         payload = WebhookPayload.model_validate_json(raw_body)
     except ValidationError as exc:
         logger.warning("Malformed webhook payload: %s", exc)
         return Response(status_code=status.HTTP_400_BAD_REQUEST)
 
-    for sender_id, text in payload.replyable_messages():
-        logger.info("Replying to %s (received %d chars)", sender_id, len(text))
-
+    allowed_senders = settings.allowed_sender_id_set
+    for sender_id, text in payload.replyable_messages(settings.ig_account_id):
         await append(sender_id, "user", text)
+
+        if allowed_senders and sender_id not in allowed_senders:
+            # The assistant isn't live for everyone yet. Store the message so
+            # nothing is lost, but don't generate or send a reply.
+            logger.info("Ignoring %s: not in the allowed sender list", sender_id)
+            continue
+
+        logger.info("Replying to %s (received %d chars)", sender_id, len(text))
 
         window = await recent(sender_id, settings.history_window_messages)
         if not window:

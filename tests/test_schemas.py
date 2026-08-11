@@ -7,7 +7,7 @@ def _payload(message: dict) -> dict:
         "object": "instagram",
         "entry": [
             {
-                "id": "17841400000000000",
+                "id": "STUDIO",
                 "time": 1723000000,
                 "messaging": [
                     {
@@ -28,7 +28,7 @@ def test_text_message_is_replyable():
     payload = WebhookPayload.model_validate(
         _payload({"mid": "m1", "text": "Γεια σας, πόσο κοστίζει;"})
     )
-    assert payload.replyable_messages() == [
+    assert payload.replyable_messages("STUDIO") == [
         ("SENDER_1", "Γεια σας, πόσο κοστίζει;")
     ]
 
@@ -39,7 +39,7 @@ def test_echo_message_is_skipped():
     payload = WebhookPayload.model_validate(
         _payload({"mid": "m2", "text": "our own reply", "is_echo": True})
     )
-    assert payload.replyable_messages() == []
+    assert payload.replyable_messages("STUDIO") == []
 
 
 def test_message_without_text_is_skipped():
@@ -48,7 +48,7 @@ def test_message_without_text_is_skipped():
     payload = WebhookPayload.model_validate(
         _payload({"mid": "m3", "attachments": [{"type": "image"}]})
     )
-    assert payload.replyable_messages() == []
+    assert payload.replyable_messages("STUDIO") == []
 
 
 def test_event_without_message_is_skipped():
@@ -59,7 +59,7 @@ def test_event_without_message_is_skipped():
             "object": "instagram",
             "entry": [
                 {
-                    "id": "E1",
+                    "id": "STUDIO",
                     "messaging": [
                         {
                             "sender": {"id": "SENDER_1"},
@@ -71,7 +71,7 @@ def test_event_without_message_is_skipped():
             ],
         }
     )
-    assert payload.replyable_messages() == []
+    assert payload.replyable_messages("STUDIO") == []
 
 
 def test_multiple_entries_and_events_are_all_collected():
@@ -82,7 +82,7 @@ def test_multiple_entries_and_events_are_all_collected():
             "object": "instagram",
             "entry": [
                 {
-                    "id": "E1",
+                    "id": "STUDIO",
                     "messaging": [
                         {
                             "sender": {"id": "A"},
@@ -97,7 +97,7 @@ def test_multiple_entries_and_events_are_all_collected():
                     ],
                 },
                 {
-                    "id": "E2",
+                    "id": "STUDIO",
                     "messaging": [
                         {
                             "sender": {"id": "C"},
@@ -109,11 +109,34 @@ def test_multiple_entries_and_events_are_all_collected():
             ],
         }
     )
-    assert payload.replyable_messages() == [
+    assert payload.replyable_messages("STUDIO") == [
         ("A", "one"),
         ("B", "two"),
         ("C", "three"),
     ]
+
+
+def test_entry_for_a_different_account_is_ignored():
+    from app.schemas import WebhookPayload
+
+    payload = WebhookPayload.model_validate(
+        {
+            "object": "instagram",
+            "entry": [
+                {
+                    "id": "OTHER_ACCOUNT",
+                    "messaging": [
+                        {
+                            "sender": {"id": "A"},
+                            "recipient": {"id": "OTHER_ACCOUNT"},
+                            "message": {"mid": "m1", "text": "one"},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    assert payload.replyable_messages("STUDIO") == []
 
 
 def test_payload_missing_object_is_rejected():

@@ -5,7 +5,7 @@ import respx
 
 from tests.conftest import ACCESS_TOKEN
 
-ENDPOINT = "https://graph.instagram.com/v22.0/me/messages"
+ENDPOINT = "https://graph.instagram.com/v26.0/me/messages"
 
 # respx patches httpcore, which the app's httpx.AsyncClient goes through.
 # TestClient's ASGITransport bypasses httpcore entirely, so requests to the

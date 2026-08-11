@@ -2,10 +2,11 @@ import json
 
 import httpx
 import respx
+from fastapi.testclient import TestClient
 
 from tests.conftest import CANNED_REPLY, sign
 
-ENDPOINT = "https://graph.instagram.com/v22.0/me/messages"
+ENDPOINT = "https://graph.instagram.com/v26.0/me/messages"
 ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
 
 GENERATED = "Καλησπέρα! Πες μου περισσότερα για το σχέδιο."
@@ -191,6 +192,50 @@ def test_echo_message_stores_nothing_and_sends_nothing(client):
     assert route.call_count == 0
     assert llm.call_count == 0
     assert _stored("SENDER_1") == []
+
+
+@respx.mock
+def test_reply_suppressed_for_sender_outside_allowlist(env, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("ALLOWED_SENDER_IDS", "SOME_OTHER_SENDER")
+    get_settings.cache_clear()
+
+    from app.main import create_app
+
+    _mock_llm()
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    with TestClient(create_app()) as client:
+        response = _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    assert response.status_code == 200
+    assert route.call_count == 0
+    assert _stored("SENDER_1") == [("user", "Γεια σας")]
+
+
+@respx.mock
+def test_reply_sent_for_sender_inside_allowlist(env, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("ALLOWED_SENDER_IDS", "OTHER_SENDER,SENDER_1")
+    get_settings.cache_clear()
+
+    from app.main import create_app
+
+    _mock_llm()
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    with TestClient(create_app()) as client:
+        response = _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    assert response.status_code == 200
+    assert route.call_count == 1
+    assert _stored("SENDER_1") == [("user", "Γεια σας"), ("assistant", GENERATED)]
 
 
 @respx.mock

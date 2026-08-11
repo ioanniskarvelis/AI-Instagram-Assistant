@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 VERIFY_TOKEN = "test-verify-token"
 ACCESS_TOKEN = "test-access-token"
 APP_SECRET = "test-app-secret"
+ACCOUNT_ID = "STUDIO"
 CANNED_REPLY = "Test reply"
 ANTHROPIC_API_KEY = "test-anthropic-key"
 
@@ -22,6 +23,11 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setenv("IG_VERIFY_TOKEN", VERIFY_TOKEN)
     monkeypatch.setenv("IG_USER_ACCESS_TOKEN", ACCESS_TOKEN)
     monkeypatch.setenv("IG_APP_SECRET", APP_SECRET)
+    monkeypatch.setenv("IG_ACCOUNT_ID", ACCOUNT_ID)
+    # Pin settings that have a documented default so tests aren't affected by
+    # whatever the developer's real .env happens to contain.
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    monkeypatch.setenv("ALLOWED_SENDER_IDS", "")
     monkeypatch.setenv("CANNED_REPLY", CANNED_REPLY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
     monkeypatch.setenv("DB_PATH", str(tmp_path / "history.db"))

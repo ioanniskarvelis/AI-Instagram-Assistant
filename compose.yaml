@@ -13,7 +13,7 @@ services:
   tunnel:
     image: cloudflare/cloudflared:latest
     profiles: ["dev"]
-    command: tunnel --no-autoupdate --url http://api:${PORT:-3000}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       - api
     restart: unless-stopped

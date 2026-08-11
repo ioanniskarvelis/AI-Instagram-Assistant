@@ -37,7 +37,7 @@ async def test_generate_reply_returns_text_and_sends_the_window():
     assert await generate_reply(turns) == "Καλησπέρα!"
 
     body = json.loads(route.calls.last.request.content)
-    assert body["model"] == "claude-opus-5"
+    assert body["model"] == "claude-sonnet-5"
     assert body["max_tokens"] == 2000
     assert body["output_config"] == {"effort": "low"}
     assert body["system"][0]["text"] == SYSTEM_PROMPT

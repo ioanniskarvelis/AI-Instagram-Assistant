@@ -19,13 +19,28 @@ class Settings(BaseSettings):
     ig_verify_token: str
     ig_user_access_token: str
     ig_app_secret: str
-    ig_api_version: str = "v22.0"
+    ig_account_id: str
+    ig_api_version: str = "v26.0"
     port: int = 3000
     canned_reply: str = DEFAULT_CANNED_REPLY
     log_level: str = "INFO"
 
+    # Comma-separated IG-scoped sender ids. While set, only these senders get
+    # replies — everyone else's DMs are received and stored but ignored. This
+    # is a temporary gate for testing before the assistant goes live for all
+    # customers; leave empty to reply to everyone.
+    allowed_sender_ids: str = ""
+
+    @property
+    def allowed_sender_id_set(self) -> frozenset[str]:
+        return frozenset(
+            sender_id.strip()
+            for sender_id in self.allowed_sender_ids.split(",")
+            if sender_id.strip()
+        )
+
     anthropic_api_key: str
-    anthropic_model: str = "claude-opus-5"
+    anthropic_model: str = "claude-sonnet-5"
     llm_max_tokens: int = 2000
     llm_effort: str = "low"
 

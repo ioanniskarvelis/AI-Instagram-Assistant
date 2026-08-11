@@ -14,7 +14,7 @@ def test_settings_apply_documented_defaults():
     from app.config import get_settings
 
     settings = get_settings()
-    assert settings.ig_api_version == "v22.0"
+    assert settings.ig_api_version == "v26.0"
     assert settings.port == 3000
     assert settings.log_level == "INFO"
 
@@ -32,7 +32,7 @@ def test_new_settings_apply_documented_defaults():
     from app.config import get_settings
 
     settings = get_settings()
-    assert settings.anthropic_model == "claude-opus-5"
+    assert settings.anthropic_model == "claude-sonnet-5"
     assert settings.llm_max_tokens == 2000
     assert settings.llm_effort == "low"
     assert settings.history_retention_days == 20
