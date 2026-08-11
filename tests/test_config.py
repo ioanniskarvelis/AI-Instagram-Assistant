@@ -26,3 +26,23 @@ def test_missing_required_setting_raises(monkeypatch):
     get_settings.cache_clear()
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_new_settings_apply_documented_defaults():
+    from app.config import get_settings
+
+    settings = get_settings()
+    assert settings.anthropic_model == "claude-opus-5"
+    assert settings.llm_max_tokens == 2000
+    assert settings.llm_effort == "low"
+    assert settings.history_retention_days == 20
+    assert settings.history_window_messages == 20
+
+
+def test_missing_anthropic_key_raises(monkeypatch):
+    from app.config import Settings, get_settings
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

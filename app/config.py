@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     canned_reply: str = DEFAULT_CANNED_REPLY
     log_level: str = "INFO"
 
+    anthropic_api_key: str
+    anthropic_model: str = "claude-opus-5"
+    llm_max_tokens: int = 2000
+    llm_effort: str = "low"
+
+    db_path: str = "./data/history.db"
+    history_retention_days: int = 20
+    history_window_messages: int = 20
+
 
 @lru_cache
 def get_settings() -> Settings:

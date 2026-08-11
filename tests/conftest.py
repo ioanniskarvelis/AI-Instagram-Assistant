@@ -8,6 +8,7 @@ VERIFY_TOKEN = "test-verify-token"
 ACCESS_TOKEN = "test-access-token"
 APP_SECRET = "test-app-secret"
 CANNED_REPLY = "Test reply"
+ANTHROPIC_API_KEY = "test-anthropic-key"
 
 
 def sign(body: bytes) -> str:
@@ -17,11 +18,13 @@ def sign(body: bytes) -> str:
 
 
 @pytest.fixture(autouse=True)
-def env(monkeypatch):
+def env(monkeypatch, tmp_path):
     monkeypatch.setenv("IG_VERIFY_TOKEN", VERIFY_TOKEN)
     monkeypatch.setenv("IG_USER_ACCESS_TOKEN", ACCESS_TOKEN)
     monkeypatch.setenv("IG_APP_SECRET", APP_SECRET)
     monkeypatch.setenv("CANNED_REPLY", CANNED_REPLY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "history.db"))
 
     from app.config import get_settings
 
@@ -34,4 +37,5 @@ def env(monkeypatch):
 def client(env):
     from app.main import create_app
 
-    return TestClient(create_app())
+    with TestClient(create_app()) as test_client:
+        yield test_client
