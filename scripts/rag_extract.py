@@ -11,7 +11,6 @@ docs/superpowers/specs/2026-08-12-rag-style-retrieval-design.md.
 """
 import json
 import re
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,12 +64,53 @@ _BARE_NUMBER_PATTERN = re.compile(
 )
 _BARE_TIME_PATTERN = re.compile(r"\d{1,2}[:.]\d{2}")
 
+# One codepoint in, one codepoint out, so the result stays the same length
+# and every character stays at the same index as the original — required
+# for _scrub_dates below, which matches against the stripped text but
+# substitutes into the original (accented) text by reusing match spans.
+_ACCENT_MAP = str.maketrans(
+    "άέήίόύώΐΰϊϋΆΈΉΊΌΎΏΪΫ",
+    "αεηιουωιυιυΑΕΗΙΟΥΩΙΥ",
+)
+
+# Day-of-week names are deliberately NOT scrubbed anywhere in this module:
+# "Παρασκευή" is timeless vocabulary, not a stale fact, and removing it would
+# cost real style for no privacy/staleness benefit. A calendar date is a
+# different matter — "19 Νοεμβρίου" is exactly as stale as a clock time.
+_MONTH_NAMES = (
+    "ιανουαριου", "φεβρουαριου", "μαρτιου", "απριλιου", "μαιου", "ιουνιου",
+    "ιουλιου", "αυγουστου", "σεπτεμβριου", "οκτωβριου", "νοεμβριου",
+    "δεκεμβριου",
+)
+_DATE_PATTERN = re.compile(
+    r"\d{1,2}\s*(?:του\s+μηνος|" + "|".join(_MONTH_NAMES) + r")",
+    re.IGNORECASE,
+)
+
 
 def _strip_accents(text: str) -> str:
     """Fold away Greek tonos marks so a plain stem like "κοστ" matches every
     inflected form regardless of where the stress accent falls."""
-    decomposed = unicodedata.normalize("NFD", text)
-    return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
+    return text.translate(_ACCENT_MAP)
+
+
+def _scrub_dates(text: str) -> str:
+    """Replace "<day> <month name>" / "<day> του μηνός" with "[time]".
+
+    Matches against an accent-stripped copy (month names are far more often
+    typed with the accent than not, but this shouldn't depend on it) and
+    reuses the match spans directly against the original text — safe only
+    because _strip_accents is length- and position-preserving.
+    """
+    stripped = _strip_accents(text)
+    pieces: list[str] = []
+    last = 0
+    for match in _DATE_PATTERN.finditer(stripped):
+        pieces.append(text[last : match.start()])
+        pieces.append("[time]")
+        last = match.end()
+    pieces.append(text[last:])
+    return "".join(pieces)
 
 
 @dataclass(frozen=True)
@@ -89,10 +129,11 @@ def fix_mojibake(text: str) -> str:
 
 
 def scrub_pricing(customer_text: str, studio_reply: str) -> str:
-    """Replace price and booking-time mentions in the studio's reply with a
-    neutral placeholder — "[price]" for currency amounts, "[time]" for
-    booking times/dates, so a human skimming the review file isn't stuck
-    decoding a mislabeled token.
+    """Replace price, booking-time, and calendar-date mentions in the
+    studio's reply with a neutral placeholder — "[price]" for currency
+    amounts, "[time]" for booking times/dates, so a human skimming the
+    review file isn't stuck decoding a mislabeled token. Bare weekday names
+    ("Παρασκευή") are deliberately left alone — see _MONTH_NAMES above.
 
     Currency-symbol/word-adjacent numbers are always scrubbed. Beyond that,
     a bare number or time in the reply usually only reads as a price or a
@@ -109,6 +150,7 @@ def scrub_pricing(customer_text: str, studio_reply: str) -> str:
     reply = _CURRENCY_PATTERN.sub("[price]", studio_reply)
     reply = _EURO_PREFIX_PATTERN.sub("[price]", reply)
     reply = _TIME_PATTERN.sub("[time]", reply)
+    reply = _scrub_dates(reply)
 
     context = _strip_accents(customer_text + "\n" + reply)
     # Time first: a bare "18:00" must be consumed as one token before the

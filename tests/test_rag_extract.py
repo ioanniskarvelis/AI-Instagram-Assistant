@@ -141,6 +141,38 @@ def test_scrub_pricing_replaces_bare_time_next_to_a_day_name():
     )
 
 
+def test_scrub_pricing_replaces_day_and_month_date():
+    assert (
+        scrub_pricing("γεια", "Έχουμε διαθέσιμο στις 19 Νοεμβρίου")
+        == "Έχουμε διαθέσιμο στις [time]"
+    )
+
+
+def test_scrub_pricing_replaces_day_of_month_phrase():
+    assert (
+        scrub_pricing("γεια", "24 του μηνός μπορείτε")
+        == "[time] μπορείτε"
+    )
+
+
+def test_scrub_pricing_replaces_date_unaccented():
+    # Casual typing often drops accents entirely; the month-name match must
+    # not depend on the accent being present.
+    assert (
+        scrub_pricing("γεια", "στις 19 Νοεμβριου μπορουμε")
+        == "στις [time] μπορουμε"
+    )
+
+
+def test_scrub_pricing_leaves_weekday_names_alone():
+    # Timeless vocabulary, not a stale fact — never scrubbed, even though
+    # it's also used as a booking-signal word to gate bare-time scrubbing.
+    assert (
+        scrub_pricing("γεια", "Ραντεβού έχουμε Παρασκευή")
+        == "Ραντεβού έχουμε Παρασκευή"
+    )
+
+
 def test_scrub_pricing_does_not_fragment_a_bare_time_when_price_signal_also_present():
     # Both a price signal ("€") and a booking signal ("ραντεβού") appear in
     # the same exchange — the bare-number pass must not run on "12:00"
