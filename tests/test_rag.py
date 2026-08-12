@@ -128,3 +128,28 @@ async def test_retrieve_returns_empty_for_empty_corpus(monkeypatch, tmp_path):
     _load_index.cache_clear()
 
     assert await retrieve("query", k=3) == []
+
+
+@respx.mock
+async def test_retrieve_returns_empty_for_schema_malformed_index(monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.rag import _load_index, retrieve
+
+    index_path = tmp_path / "rag_index.json"
+    # Valid JSON, but structurally malformed: one entry is missing "reply",
+    # and embeddings have inconsistent lengths across entries.
+    index_path.write_text(
+        json.dumps(
+            [
+                {"question": "q1", "embedding": [1.0, 0.0]},
+                {"question": "q2", "reply": "r2", "embedding": [0.0, 1.0, 0.5]},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VOYAGE_API_KEY", "test-voyage-key")
+    monkeypatch.setenv("RAG_INDEX_PATH", str(index_path))
+    get_settings.cache_clear()
+    _load_index.cache_clear()
+
+    assert await retrieve("query", k=3) == []

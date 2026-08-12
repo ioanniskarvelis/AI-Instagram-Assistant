@@ -40,13 +40,13 @@ def _load_index() -> "_Index | None":
     path = Path(get_settings().rag_index_path)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        logger.warning("RAG index not available at %s", path)
+        if not raw:
+            return None
+        examples = [Example(question=r["question"], reply=r["reply"]) for r in raw]
+        embeddings = np.array([r["embedding"] for r in raw], dtype=np.float32)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        logger.warning("RAG index not available or malformed at %s", path)
         return None
-    if not raw:
-        return None
-    examples = [Example(question=r["question"], reply=r["reply"]) for r in raw]
-    embeddings = np.array([r["embedding"] for r in raw], dtype=np.float32)
     return _Index(examples=examples, embeddings=embeddings)
 
 
