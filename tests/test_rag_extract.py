@@ -26,30 +26,132 @@ def test_fix_mojibake_leaves_plain_ascii_unchanged():
 
 
 def test_scrub_pricing_replaces_euro_symbol_amount():
-    assert scrub_pricing("Θα σου κοστίσει 150€ περίπου") == "Θα σου κοστίσει [price] περίπου"
+    assert (
+        scrub_pricing("γεια", "Θα σου κοστίσει 150€ περίπου")
+        == "Θα σου κοστίσει [price] περίπου"
+    )
 
 
 def test_scrub_pricing_replaces_euro_word_amount():
-    assert scrub_pricing("κοστίζει 150 ευρώ") == "κοστίζει [price]"
+    assert scrub_pricing("γεια", "κοστίζει 150 ευρώ") == "κοστίζει [price]"
 
 
 def test_scrub_pricing_replaces_range():
-    assert scrub_pricing("κοστίζει 100-150 ευρώ") == "κοστίζει [price]"
+    assert scrub_pricing("γεια", "κοστίζει 100-150 ευρώ") == "κοστίζει [price]"
 
 
 def test_scrub_pricing_replaces_booking_time():
-    assert scrub_pricing("Ελα αύριο στις 5 μ.μ.") == "Ελα αύριο στις [price]"
+    assert (
+        scrub_pricing("γεια", "Ελα αύριο στις 5 μ.μ.") == "Ελα αύριο στις [price]"
+    )
 
 
 def test_scrub_pricing_replaces_english_euro_amount():
     assert (
-        scrub_pricing("It will cost around 150 euros for that size")
+        scrub_pricing("γεια", "It will cost around 150 euros for that size")
         == "It will cost around [price] for that size"
     )
 
 
 def test_scrub_pricing_leaves_unrelated_numbers_alone():
-    assert scrub_pricing("θέλω tattoo 10 πόντους") == "θέλω tattoo 10 πόντους"
+    assert (
+        scrub_pricing("γεια", "θέλω tattoo 10 πόντους")
+        == "θέλω tattoo 10 πόντους"
+    )
+
+
+def test_scrub_pricing_replaces_bare_range_when_customer_asked_price():
+    # Real DM pattern: the studio just states a bare range, no currency word,
+    # once the customer has already asked "τιμη".
+    assert (
+        scrub_pricing(
+            "θα ηθελα να ρωτησω για μια τιμη στο περίπου",
+            "Καλησπέρα στα 180 με 220 ανάλογα το μέγεθος",
+        )
+        == "Καλησπέρα στα [price] ανάλογα το μέγεθος"
+    )
+
+
+def test_scrub_pricing_replaces_bare_range_when_reply_itself_signals_price():
+    # No price word from the customer, but the reply mentions "κόστος".
+    assert (
+        scrub_pricing(
+            "Αυτο εδω",
+            "από 40 τον καθένα σας να υπολογίζετε κόστος",
+        )
+        == "από [price] τον καθένα σας να υπολογίζετε κόστος"
+    )
+
+
+def test_scrub_pricing_replaces_bare_english_range_on_how_much():
+    assert (
+        scrub_pricing(
+            "How much it would be this butterfly tattoo?",
+            "Hello 110-130 depends the exact size",
+        )
+        == "Hello [price] depends the exact size"
+    )
+
+
+def test_scrub_pricing_replaces_bare_time_when_booking_signal_present():
+    assert (
+        scrub_pricing(
+            "Θα μπορούσαμε να κλείσουμε ένα ραντεβού;",
+            "Βεβαίως για άμεσα έχουμε τετάρτη 18:00",
+        )
+        == "Βεβαίως για άμεσα έχουμε τετάρτη [price]"
+    )
+
+
+def test_scrub_pricing_leaves_small_bare_numbers_alone_even_with_price_signal():
+    # A single-digit number reads as a quantity, not a price, even on an
+    # otherwise price-signalling line.
+    assert (
+        scrub_pricing("Πόσο κοστίζει;", "Θέλεις 2 σχέδια ή 1;")
+        == "Θέλεις 2 σχέδια ή 1;"
+    )
+
+
+def test_scrub_pricing_leaves_bare_numbers_alone_without_any_signal():
+    assert (
+        scrub_pricing("Αυτο εδω θελω", "Ωραίο σχέδιο, στείλε και άλλες φωτο")
+        == "Ωραίο σχέδιο, στείλε και άλλες φωτο"
+    )
+
+
+def test_scrub_pricing_matches_signal_word_regardless_of_accent_placement():
+    # "κόστος" carries its stress accent on the letter right after "κ", so a
+    # literal-accented stem would miss it even though "κοστίζει" (accent
+    # further along) matches fine — accent-stripping must catch both.
+    assert (
+        scrub_pricing("θελω ενα τατου", "40 να υπολογίζετε κόστος")
+        == "[price] να υπολογίζετε κόστος"
+    )
+
+
+def test_scrub_pricing_replaces_bare_time_next_to_a_day_name():
+    # No "ραντεβού"/"ώρα" in either turn — the appointment context was
+    # presumably set earlier in the thread, outside this two-turn window.
+    assert (
+        scrub_pricing(
+            "Παρασκευή έχουμε βασικά τίποτα ;;;",
+            "Παρασκευή 13:00 μπορείτε ;",
+        )
+        == "Παρασκευή [price] μπορείτε ;"
+    )
+
+
+def test_scrub_pricing_does_not_fragment_a_bare_time_when_price_signal_also_present():
+    # Both a price signal ("€") and a booking signal ("ραντεβού") appear in
+    # the same exchange — the bare-number pass must not run on "12:00"
+    # before the bare-time pass treats it as one token.
+    assert (
+        scrub_pricing(
+            "στα 75€ μπορούμε την Πέμπτη να βάλουμε ραντεβού;",
+            "Καλησπέρα πέμπτη 12:00 μπορείτε ;",
+        )
+        == "Καλησπέρα πέμπτη [price] μπορείτε ;"
+    )
 
 
 def test_collapse_turns_merges_consecutive_same_sender():

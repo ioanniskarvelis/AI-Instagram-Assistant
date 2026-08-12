@@ -11,6 +11,7 @@ docs/superpowers/specs/2026-08-12-rag-style-retrieval-design.md.
 """
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +36,42 @@ _TIME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Real DM data rarely spells out a currency word: the studio typically just
+# states a bare number or range ("180 me 220", "40-45 to proto") once price
+# has already come up in the exchange, and gives a bare "18:00" once booking
+# has come up. These signal words gate a second, more permissive pass over
+# the studio's reply — see scrub_pricing. Patterns are plain (unaccented)
+# stems, matched against accent-stripped text via _strip_accents: Greek
+# stress accents land on different letters across inflected forms (e.g.
+# "κοστίζει" vs "κόστος"), so a literal accented stem would silently miss
+# half its own inflections.
+_PRICE_SIGNAL_PATTERN = re.compile(
+    r"τιμ|κοστ|ευρω|€|εκπτ|συνολ|καθεν|how much|cost|price|euro",
+    re.IGNORECASE,
+)
+_BOOKING_SIGNAL_PATTERN = re.compile(
+    r"ραντεβου|διαθεσιμ|ωρ[αες]|κλεισ|book|appointment|μερες"
+    # Day names: a day name next to a bare time ("Παρασκευή 13:00") is a
+    # booking slot even when neither exchange turn says "ραντεβού"/"ώρα"
+    # outright — common when the appointment context was set earlier in
+    # the thread, outside the two-turn window this script looks at.
+    r"|δευτερ|τριτ|τεταρτ|πεμπτ|παρασκευ|σαββατ|κυριακ",
+    re.IGNORECASE,
+)
+# Two digits minimum: a bare single digit ("2 σχέδια") is far more often a
+# quantity than a price, so it's left alone even on a price-signal line.
+_BARE_NUMBER_PATTERN = re.compile(
+    r"\d{2,}(?:[.,]\d+)?(?:\s*(?:[-–]|με|έως|to)\s*\d{2,}(?:[.,]\d+)?)?"
+)
+_BARE_TIME_PATTERN = re.compile(r"\d{1,2}[:.]\d{2}")
+
+
+def _strip_accents(text: str) -> str:
+    """Fold away Greek tonos marks so a plain stem like "κοστ" matches every
+    inflected form regardless of where the stress accent falls."""
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
+
 
 @dataclass(frozen=True)
 class Pair:
@@ -51,17 +88,35 @@ def fix_mojibake(text: str) -> str:
         return text
 
 
-def scrub_pricing(text: str) -> str:
-    """Replace price and booking-time mentions with a neutral placeholder.
+def scrub_pricing(customer_text: str, studio_reply: str) -> str:
+    """Replace price and booking-time mentions in the studio's reply with a
+    neutral placeholder.
+
+    Currency-symbol/word-adjacent numbers are always scrubbed. Beyond that,
+    a bare number or time in the reply usually only reads as a price or a
+    booking slot in light of the surrounding exchange (the customer asked
+    "τιμή;" and the studio just states "180-220"; the customer asked for a
+    ραντεβού and the studio just states "18:00") — so `customer_text` is
+    also scanned for the signal words that gate that second, more
+    permissive pass.
 
     Heuristic, not exhaustive — the human review step (data/rag_corpus_review.jsonl)
     is the real safety net; the hard rule against quoting prices lives in
     app/llm.py's SYSTEM_PROMPT regardless of what this misses.
     """
-    text = _CURRENCY_PATTERN.sub("[price]", text)
-    text = _EURO_PREFIX_PATTERN.sub("[price]", text)
-    text = _TIME_PATTERN.sub("[price]", text)
-    return text
+    reply = _CURRENCY_PATTERN.sub("[price]", studio_reply)
+    reply = _EURO_PREFIX_PATTERN.sub("[price]", reply)
+    reply = _TIME_PATTERN.sub("[price]", reply)
+
+    context = _strip_accents(customer_text + "\n" + reply)
+    # Time first: a bare "18:00" must be consumed as one token before the
+    # bare-number pass, or it fragments into two separate "[price]:[price]"
+    # matches on either side of the colon.
+    if _BOOKING_SIGNAL_PATTERN.search(context):
+        reply = _BARE_TIME_PATTERN.sub("[price]", reply)
+    if _PRICE_SIGNAL_PATTERN.search(context):
+        reply = _BARE_NUMBER_PATTERN.sub("[price]", reply)
+    return reply
 
 
 def _is_substantial(text: str) -> bool:
@@ -123,7 +178,7 @@ def extract_pairs(thread_id: str, messages: list[dict]) -> list[Pair]:
             Pair(
                 thread_id=thread_id,
                 customer=text,
-                studio_reply_scrubbed=scrub_pricing(next_text),
+                studio_reply_scrubbed=scrub_pricing(text, next_text),
             )
         )
     return pairs
