@@ -218,6 +218,30 @@ async def test_generate_reply_general_intent_matches_todays_prompt():
 
 
 @respx.mock
+async def test_generate_reply_unmapped_intent_degrades_to_no_addendum():
+    """INTENT_ADDENDA has no entry for a value like this (Intent is closed to
+    exactly PRICE/BOOKING/DESIGN/GENERAL today, so nothing produces this at
+    runtime yet) — generate_reply must degrade to the base prompt via
+    INTENT_ADDENDA.get(), never raise a KeyError, if the enum ever grows
+    without a matching addendum."""
+    from app.history import Turn
+    from app.llm import INTENT_ADDENDA, SYSTEM_PROMPT, generate_reply
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    unmapped = "future_intent_with_no_addendum"
+    assert unmapped not in INTENT_ADDENDA
+
+    reply = await generate_reply([Turn(role="user", text="γεια")], intent=unmapped)
+
+    assert reply == "Καλησπέρα!"
+    body = json.loads(route.calls.last.request.content)
+    assert body["system"][0]["text"] == SYSTEM_PROMPT
+
+
+@respx.mock
 async def test_generate_reply_intent_addendum_precedes_style_block():
     from app.history import Turn
     from app.intent import Intent

@@ -92,8 +92,9 @@ async def generate_reply(
     canned reply.
     """
     parts = [SYSTEM_PROMPT]
-    if intent is not None and intent != Intent.GENERAL:
-        parts.append(INTENT_ADDENDA[intent])
+    addendum = INTENT_ADDENDA.get(intent) if intent is not None else None
+    if addendum:
+        parts.append(addendum)
     if examples:
         parts.append(_render_style_block(examples))
     system_text = "\n\n".join(parts)
