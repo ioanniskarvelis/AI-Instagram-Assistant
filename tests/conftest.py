@@ -33,12 +33,19 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setenv("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
     monkeypatch.setenv("DB_PATH", str(tmp_path / "history.db"))
     monkeypatch.setenv("ASSISTANT_ADMIN_KEY", ADMIN_KEY)
+    monkeypatch.setenv("VOYAGE_API_KEY", "")
+    monkeypatch.setenv("VOYAGE_MODEL", "voyage-3.5")
+    monkeypatch.setenv("RAG_TOP_K", "3")
+    monkeypatch.setenv("RAG_INDEX_PATH", str(tmp_path / "rag_index.json"))
 
     from app.config import get_settings
+    from app.rag import _load_index
 
     get_settings.cache_clear()
+    _load_index.cache_clear()
     yield
     get_settings.cache_clear()
+    _load_index.cache_clear()
 
 
 @pytest.fixture
