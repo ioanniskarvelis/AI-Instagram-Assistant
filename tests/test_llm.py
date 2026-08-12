@@ -99,3 +99,42 @@ async def test_generate_reply_returns_none_on_truncation():
     )
 
     assert await generate_reply([Turn(role="user", text="γεια")]) is None
+
+
+@respx.mock
+async def test_generate_reply_includes_style_examples_after_rules():
+    from app.history import Turn
+    from app.llm import SYSTEM_PROMPT, generate_reply
+    from app.rag import Example
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    examples = [
+        Example(question="Πόσο κοστίζει;", reply="Στείλε φωτο και σου λέμε [price]"),
+    ]
+    await generate_reply([Turn(role="user", text="γεια")], examples)
+
+    body = json.loads(route.calls.last.request.content)
+    system_text = body["system"][0]["text"]
+    assert system_text.startswith(SYSTEM_PROMPT)
+    style_index = system_text.index("STYLE REFERENCE")
+    assert style_index > len(SYSTEM_PROMPT)
+    assert "Πόσο κοστίζει;" in system_text
+    assert "Στείλε φωτο και σου λέμε [price]" in system_text
+
+
+@respx.mock
+async def test_generate_reply_without_examples_matches_todays_prompt():
+    from app.history import Turn
+    from app.llm import SYSTEM_PROMPT, generate_reply
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    await generate_reply([Turn(role="user", text="γεια")])
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["system"][0]["text"] == SYSTEM_PROMPT
