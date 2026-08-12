@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -5,6 +6,7 @@ import logging
 from fastapi import APIRouter, Request, Response, status
 from pydantic import ValidationError
 
+from app import admin_store
 from app.config import get_settings
 from app.history import Turn, append, recent
 from app.instagram import MAX_MESSAGE_BYTES, send_text
@@ -76,6 +78,15 @@ async def receive(request: Request) -> Response:
             # The assistant isn't live for everyone yet. Store the message so
             # nothing is lost, but don't generate or send a reply.
             logger.info("Ignoring %s: not in the allowed sender list", sender_id)
+            continue
+
+        if await asyncio.to_thread(admin_store.get_bot_disabled):
+            # An admin hit the global kill switch. Store and stay silent.
+            logger.info("Ignoring %s: bot is globally disabled", sender_id)
+            continue
+
+        if await asyncio.to_thread(admin_store.get_conversation_disabled, sender_id):
+            logger.info("Ignoring %s: conversation is disabled", sender_id)
             continue
 
         logger.info("Replying to %s (received %d chars)", sender_id, len(text))

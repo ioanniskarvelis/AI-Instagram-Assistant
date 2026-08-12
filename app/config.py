@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     history_retention_days: int = 20
     history_window_messages: int = 20
 
+    # Bearer token the admin API requires on every /admin/* request. Set by
+    # the studio's website backend (Netlify function), not the browser.
+    assistant_admin_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

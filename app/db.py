@@ -24,6 +24,23 @@ SCHEMA_STATEMENTS = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages (sender_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_messages_expiry ON messages (created_at)",
+    # Single-row table holding the global kill switch. The row is seeded by
+    # init_schema so callers can always UPDATE it rather than upserting.
+    """
+    CREATE TABLE IF NOT EXISTS bot_state (
+        id       INTEGER PRIMARY KEY CHECK (id = 1),
+        disabled INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    # Per-sender kill switch. Only present for senders an admin has muted;
+    # absence means enabled, so no row is needed for the common case.
+    """
+    CREATE TABLE IF NOT EXISTS conversation_state (
+        sender_id TEXT PRIMARY KEY,
+        disabled  INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    "INSERT OR IGNORE INTO bot_state (id, disabled) VALUES (1, 0)",
 )
 
 

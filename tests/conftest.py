@@ -10,6 +10,7 @@ APP_SECRET = "test-app-secret"
 ACCOUNT_ID = "STUDIO"
 CANNED_REPLY = "Test reply"
 ANTHROPIC_API_KEY = "test-anthropic-key"
+ADMIN_KEY = "test-admin-key"
 
 
 def sign(body: bytes) -> str:
@@ -31,6 +32,7 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setenv("CANNED_REPLY", CANNED_REPLY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
     monkeypatch.setenv("DB_PATH", str(tmp_path / "history.db"))
+    monkeypatch.setenv("ASSISTANT_ADMIN_KEY", ADMIN_KEY)
 
     from app.config import get_settings
 
