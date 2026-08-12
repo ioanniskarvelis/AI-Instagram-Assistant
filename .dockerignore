@@ -12,6 +12,7 @@ venv/
 tests/
 docs/
 .remember/
+inbox/
 README.md
 requirements-dev.txt
 pytest.ini
