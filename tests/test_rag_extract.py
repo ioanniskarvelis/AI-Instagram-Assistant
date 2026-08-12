@@ -42,7 +42,7 @@ def test_scrub_pricing_replaces_range():
 
 def test_scrub_pricing_replaces_booking_time():
     assert (
-        scrub_pricing("γεια", "Ελα αύριο στις 5 μ.μ.") == "Ελα αύριο στις [price]"
+        scrub_pricing("γεια", "Ελα αύριο στις 5 μ.μ.") == "Ελα αύριο στις [time]"
     )
 
 
@@ -99,7 +99,7 @@ def test_scrub_pricing_replaces_bare_time_when_booking_signal_present():
             "Θα μπορούσαμε να κλείσουμε ένα ραντεβού;",
             "Βεβαίως για άμεσα έχουμε τετάρτη 18:00",
         )
-        == "Βεβαίως για άμεσα έχουμε τετάρτη [price]"
+        == "Βεβαίως για άμεσα έχουμε τετάρτη [time]"
     )
 
 
@@ -137,7 +137,7 @@ def test_scrub_pricing_replaces_bare_time_next_to_a_day_name():
             "Παρασκευή έχουμε βασικά τίποτα ;;;",
             "Παρασκευή 13:00 μπορείτε ;",
         )
-        == "Παρασκευή [price] μπορείτε ;"
+        == "Παρασκευή [time] μπορείτε ;"
     )
 
 
@@ -150,7 +150,7 @@ def test_scrub_pricing_does_not_fragment_a_bare_time_when_price_signal_also_pres
             "στα 75€ μπορούμε την Πέμπτη να βάλουμε ραντεβού;",
             "Καλησπέρα πέμπτη 12:00 μπορείτε ;",
         )
-        == "Καλησπέρα πέμπτη [price] μπορείτε ;"
+        == "Καλησπέρα πέμπτη [time] μπορείτε ;"
     )
 
 

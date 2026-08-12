@@ -90,7 +90,9 @@ def fix_mojibake(text: str) -> str:
 
 def scrub_pricing(customer_text: str, studio_reply: str) -> str:
     """Replace price and booking-time mentions in the studio's reply with a
-    neutral placeholder.
+    neutral placeholder — "[price]" for currency amounts, "[time]" for
+    booking times/dates, so a human skimming the review file isn't stuck
+    decoding a mislabeled token.
 
     Currency-symbol/word-adjacent numbers are always scrubbed. Beyond that,
     a bare number or time in the reply usually only reads as a price or a
@@ -106,14 +108,14 @@ def scrub_pricing(customer_text: str, studio_reply: str) -> str:
     """
     reply = _CURRENCY_PATTERN.sub("[price]", studio_reply)
     reply = _EURO_PREFIX_PATTERN.sub("[price]", reply)
-    reply = _TIME_PATTERN.sub("[price]", reply)
+    reply = _TIME_PATTERN.sub("[time]", reply)
 
     context = _strip_accents(customer_text + "\n" + reply)
     # Time first: a bare "18:00" must be consumed as one token before the
-    # bare-number pass, or it fragments into two separate "[price]:[price]"
-    # matches on either side of the colon.
+    # bare-number pass, or it fragments into two separate placeholders on
+    # either side of the colon.
     if _BOOKING_SIGNAL_PATTERN.search(context):
-        reply = _BARE_TIME_PATTERN.sub("[price]", reply)
+        reply = _BARE_TIME_PATTERN.sub("[time]", reply)
     if _PRICE_SIGNAL_PATTERN.search(context):
         reply = _BARE_NUMBER_PATTERN.sub("[price]", reply)
     return reply
