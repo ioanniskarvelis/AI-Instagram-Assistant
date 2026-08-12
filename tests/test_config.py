@@ -56,3 +56,11 @@ def test_rag_settings_apply_documented_defaults():
     assert settings.embedding_model == "voyageai/voyage-4"
     assert settings.rag_top_k == 3
     assert settings.rag_index_path.endswith("rag_index.json")
+
+
+def test_intent_settings_apply_documented_defaults():
+    from app.config import get_settings
+
+    settings = get_settings()
+    assert settings.intent_model == "claude-haiku-4-5-20251001"
+    assert settings.intent_max_tokens == 50

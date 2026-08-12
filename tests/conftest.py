@@ -37,6 +37,8 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setenv("EMBEDDING_MODEL", "voyageai/voyage-4")
     monkeypatch.setenv("RAG_TOP_K", "3")
     monkeypatch.setenv("RAG_INDEX_PATH", str(tmp_path / "rag_index.json"))
+    monkeypatch.setenv("INTENT_MODEL", "claude-haiku-4-5-20251001")
+    monkeypatch.setenv("INTENT_MAX_TOKENS", "50")
 
     from app.config import get_settings
     from app.rag import _load_index

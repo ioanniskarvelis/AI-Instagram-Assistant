@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     rag_top_k: int = 3
     rag_index_path: str = "./data/rag_index.json"
 
+    # Intent classification (price/booking/design/general), run before every
+    # reply to steer its phrasing strategy. Deliberately a separate, cheaper/
+    # faster model from ANTHROPIC_MODEL — this call happens on every message.
+    intent_model: str = "claude-haiku-4-5-20251001"
+    intent_max_tokens: int = 50
+
 
 @lru_cache
 def get_settings() -> Settings:
