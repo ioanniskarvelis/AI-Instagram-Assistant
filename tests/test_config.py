@@ -52,7 +52,7 @@ def test_rag_settings_apply_documented_defaults():
     from app.config import get_settings
 
     settings = get_settings()
-    assert settings.voyage_api_key == ""
-    assert settings.voyage_model == "voyage-3.5"
+    assert settings.openrouter_api_key == ""
+    assert settings.embedding_model == "voyageai/voyage-4"
     assert settings.rag_top_k == 3
     assert settings.rag_index_path.endswith("rag_index.json")

@@ -3,9 +3,14 @@
 Usage, after reviewing data/rag_corpus_review.jsonl and saving your edits to
 data/rag_corpus_approved.jsonl:
 
-    VOYAGE_API_KEY=... python -m scripts.rag_build_index
+    OPENROUTER_API_KEY=... python -m scripts.rag_build_index
 
-Writes data/rag_index.json, which app/rag.py loads at runtime. See
+Writes data/rag_index.json, which app/rag.py loads at runtime. Embeddings go
+through OpenRouter (openrouter.ai/api/v1/embeddings) rather than a direct
+Voyage AI account — OpenRouter's documented request schema is just
+model/input/encoding_format, with no confirmed pass-through for Voyage's
+native input_type=query/document distinction, so this script and app/rag.py
+both embed plain text with no input_type set. See
 docs/superpowers/specs/2026-08-12-rag-style-retrieval-design.md.
 """
 import json
@@ -14,8 +19,8 @@ from pathlib import Path
 
 import httpx
 
-VOYAGE_ENDPOINT = "https://api.voyageai.com/v1/embeddings"
-VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-3.5")
+EMBEDDING_ENDPOINT = "https://openrouter.ai/api/v1/embeddings"
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "voyageai/voyage-4")
 BATCH_SIZE = 128
 REQUEST_TIMEOUT_SECONDS = 30.0
 
@@ -30,8 +35,8 @@ def _read_approved(path: Path) -> list[dict]:
 
 def _embed_batch(texts: list[str], api_key: str) -> list[list[float]]:
     response = httpx.post(
-        VOYAGE_ENDPOINT,
-        json={"input": texts, "model": VOYAGE_MODEL, "input_type": "document"},
+        EMBEDDING_ENDPOINT,
+        json={"input": texts, "model": EMBEDDING_MODEL},
         headers={"Authorization": f"Bearer {api_key}"},
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
@@ -57,7 +62,7 @@ def build_index(entries: list[dict], api_key: str) -> list[dict]:
 
 
 def main() -> None:
-    api_key = os.environ["VOYAGE_API_KEY"]
+    api_key = os.environ["OPENROUTER_API_KEY"]
     entries = _read_approved(APPROVED_PATH)
     indexed = build_index(entries, api_key)
     INDEX_PATH.write_text(json.dumps(indexed, ensure_ascii=False), encoding="utf-8")

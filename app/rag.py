@@ -11,7 +11,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-VOYAGE_ENDPOINT = "https://api.voyageai.com/v1/embeddings"
+EMBEDDING_ENDPOINT = "https://openrouter.ai/api/v1/embeddings"
 REQUEST_TIMEOUT_SECONDS = 10.0
 
 
@@ -51,20 +51,29 @@ def _load_index() -> "_Index | None":
 
 
 async def _embed_query(text: str, api_key: str, model: str) -> "np.ndarray | None":
+    """Embed one query string via OpenRouter's embeddings endpoint.
+
+    Goes through OpenRouter rather than a direct Voyage AI account, so the
+    request uses OpenRouter's generic schema (model, input) rather than
+    Voyage-native extras — in particular, there's no confirmed way to pass
+    Voyage's asymmetric input_type=query/document distinction through
+    OpenRouter, so both this call and the index-build script embed plain
+    text with no input_type set.
+    """
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
             response = await client.post(
-                VOYAGE_ENDPOINT,
-                json={"input": [text], "model": model, "input_type": "query"},
+                EMBEDDING_ENDPOINT,
+                json={"input": [text], "model": model},
                 headers={"Authorization": f"Bearer {api_key}"},
             )
     except httpx.HTTPError:
-        logger.exception("Transport error calling Voyage AI")
+        logger.exception("Transport error calling the embeddings endpoint")
         return None
 
     if response.status_code >= 400:
         logger.error(
-            "Voyage AI rejected embed request: %s %s",
+            "Embeddings endpoint rejected embed request: %s %s",
             response.status_code,
             response.text,
         )
@@ -73,7 +82,7 @@ async def _embed_query(text: str, api_key: str, model: str) -> "np.ndarray | Non
     try:
         embedding = response.json()["data"][0]["embedding"]
     except (KeyError, IndexError, TypeError, ValueError):
-        logger.exception("Unexpected Voyage AI response shape")
+        logger.exception("Unexpected embeddings response shape")
         return None
     return np.array(embedding, dtype=np.float32)
 
@@ -96,7 +105,7 @@ async def retrieve(text: str, k: int) -> list[Example]:
     reply going out.
     """
     settings = get_settings()
-    if not settings.voyage_api_key:
+    if not settings.openrouter_api_key:
         return []
 
     index = _load_index()
@@ -104,7 +113,7 @@ async def retrieve(text: str, k: int) -> list[Example]:
         return []
 
     query_embedding = await _embed_query(
-        text, settings.voyage_api_key, settings.voyage_model
+        text, settings.openrouter_api_key, settings.embedding_model
     )
     if query_embedding is None:
         return []

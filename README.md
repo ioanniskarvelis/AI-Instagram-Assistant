@@ -68,8 +68,10 @@ docker compose down -v   # removes the volume and all stored conversations
 The assistant can draw on the studio's own past Instagram DM replies (a
 Meta data export placed at `inbox/` in the project root, never committed) to
 match its phrasing, without ever exposing an old price or booking time. This
-is optional — leave `VOYAGE_API_KEY` unset and the assistant behaves exactly
-as it does without it.
+is optional — leave `OPENROUTER_API_KEY` unset and the assistant behaves
+exactly as it does without it. Embeddings go through
+[OpenRouter](https://openrouter.ai/) (`voyageai/voyage-4`), not a direct
+Voyage AI account.
 
 Before your first `docker compose up`, create a placeholder index file so
 Docker never turns the bind-mount path into a directory (see below):
@@ -100,8 +102,8 @@ To build or refresh the corpus:
 Copy-Item data\rag_corpus_review.jsonl data\rag_corpus_approved.jsonl
 # ... edit data/rag_corpus_approved.jsonl by hand ...
 
-# 3. Embed the approved corpus via Voyage AI and write the runtime index
-$env:VOYAGE_API_KEY="..."; .venv\Scripts\python -m scripts.rag_build_index
+# 3. Embed the approved corpus via OpenRouter and write the runtime index
+$env:OPENROUTER_API_KEY="..."; .venv\Scripts\python -m scripts.rag_build_index
 # writes data/rag_index.json
 ```
 

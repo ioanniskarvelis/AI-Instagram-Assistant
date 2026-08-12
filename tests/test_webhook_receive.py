@@ -303,18 +303,18 @@ def test_style_examples_reach_the_system_prompt(client, monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("VOYAGE_API_KEY", "test-voyage-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
     monkeypatch.setenv("RAG_INDEX_PATH", str(index_path))
     get_settings.cache_clear()
     _load_index.cache_clear()
 
-    respx.post("https://api.voyageai.com/v1/embeddings").mock(
+    respx.post("https://openrouter.ai/api/v1/embeddings").mock(
         return_value=httpx.Response(
             200,
             json={
                 "object": "list",
                 "data": [{"object": "embedding", "embedding": [1.0, 0.0], "index": 0}],
-                "model": "voyage-3.5",
+                "model": "voyageai/voyage-4",
                 "usage": {"total_tokens": 1},
             },
         )
@@ -331,8 +331,8 @@ def test_style_examples_reach_the_system_prompt(client, monkeypatch, tmp_path):
 
 
 @respx.mock
-def test_no_style_examples_when_voyage_key_unset(client):
-    """Today's behavior, unchanged: no VOYAGE_API_KEY means no RAG block."""
+def test_no_style_examples_when_openrouter_key_unset(client):
+    """Today's behavior, unchanged: no OPENROUTER_API_KEY means no RAG block."""
     llm = _mock_llm()
     respx.post(ENDPOINT).mock(
         return_value=httpx.Response(200, json={"message_id": "mid.1"})

@@ -5,7 +5,7 @@ import respx
 
 from scripts.rag_build_index import build_index
 
-VOYAGE_ENDPOINT = "https://api.voyageai.com/v1/embeddings"
+EMBEDDING_ENDPOINT = "https://openrouter.ai/api/v1/embeddings"
 
 
 def _embed_response(vectors):
@@ -15,14 +15,14 @@ def _embed_response(vectors):
             {"object": "embedding", "embedding": v, "index": i}
             for i, v in enumerate(vectors)
         ],
-        "model": "voyage-3.5",
+        "model": "voyageai/voyage-4",
         "usage": {"total_tokens": len(vectors)},
     }
 
 
 @respx.mock
 def test_build_index_embeds_each_entry_as_a_document():
-    respx.post(VOYAGE_ENDPOINT).mock(
+    respx.post(EMBEDDING_ENDPOINT).mock(
         return_value=httpx.Response(200, json=_embed_response([[0.1, 0.2], [0.3, 0.4]]))
     )
 
@@ -38,7 +38,7 @@ def test_build_index_embeds_each_entry_as_a_document():
     ]
     request_body = json.loads(respx.calls.last.request.content)
     assert request_body["input"] == ["q1", "q2"]
-    assert request_body["input_type"] == "document"
+    assert request_body["model"] == "voyageai/voyage-4"
     assert respx.calls.last.request.headers["Authorization"] == "Bearer test-key"
 
 
@@ -54,10 +54,10 @@ def test_build_index_pairs_entries_by_response_index_not_position():
             {"object": "embedding", "embedding": [0.3, 0.4], "index": 1},
             {"object": "embedding", "embedding": [0.1, 0.2], "index": 0},
         ],
-        "model": "voyage-3.5",
+        "model": "voyageai/voyage-4",
         "usage": {"total_tokens": 2},
     }
-    respx.post(VOYAGE_ENDPOINT).mock(return_value=httpx.Response(200, json=out_of_order_response))
+    respx.post(EMBEDDING_ENDPOINT).mock(return_value=httpx.Response(200, json=out_of_order_response))
 
     entries = [
         {"customer": "q1", "studio_reply_scrubbed": "r1"},
@@ -79,7 +79,7 @@ def test_build_index_batches_large_corpora():
         batch_input = json.loads(request.content)["input"]
         return httpx.Response(200, json=_embed_response([[0.0, 0.0]] * len(batch_input)))
 
-    respx.post(VOYAGE_ENDPOINT).mock(side_effect=_respond)
+    respx.post(EMBEDDING_ENDPOINT).mock(side_effect=_respond)
 
     entries = [
         {"customer": f"q{i}", "studio_reply_scrubbed": f"r{i}"}
