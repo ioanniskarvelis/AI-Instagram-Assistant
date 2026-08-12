@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     # the studio's website backend (Netlify function), not the browser.
     assistant_admin_key: str = ""
 
+    # Style retrieval from past DM history (RAG). Leave VOYAGE_API_KEY blank
+    # to keep the feature off — the assistant behaves exactly as without it.
+    voyage_api_key: str = ""
+    voyage_model: str = "voyage-3.5"
+    rag_top_k: int = 3
+    rag_index_path: str = "./data/rag_index.json"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -46,3 +46,13 @@ def test_missing_anthropic_key_raises(monkeypatch):
     get_settings.cache_clear()
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_rag_settings_apply_documented_defaults():
+    from app.config import get_settings
+
+    settings = get_settings()
+    assert settings.voyage_api_key == ""
+    assert settings.voyage_model == "voyage-3.5"
+    assert settings.rag_top_k == 3
+    assert settings.rag_index_path.endswith("rag_index.json")
