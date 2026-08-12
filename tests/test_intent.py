@@ -106,6 +106,55 @@ async def test_classify_maps_general_response():
 
 
 @respx.mock
+async def test_classify_maps_aftercare_response():
+    from app.history import Turn
+    from app.intent import Intent, classify
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_tool_response("aftercare"))
+    )
+    assert await classify(
+        [Turn(role="user", text="μου κοκκίνισε γύρω γύρω, είναι εντάξει;")]
+    ) == Intent.AFTERCARE
+
+
+@respx.mock
+async def test_classify_maps_complaint_response():
+    from app.history import Turn
+    from app.intent import Intent, classify
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_tool_response("complaint"))
+    )
+    assert await classify(
+        [Turn(role="user", text="Δεν είμαι καθόλου ευχαριστημένος με το αποτέλεσμα")]
+    ) == Intent.COMPLAINT
+
+
+def test_classify_prompt_describes_six_categories():
+    from app.intent import CLASSIFY_SYSTEM_PROMPT
+
+    assert "exactly one of six intents" in CLASSIFY_SYSTEM_PROMPT
+    assert "- aftercare:" in CLASSIFY_SYSTEM_PROMPT
+    assert "- complaint:" in CLASSIFY_SYSTEM_PROMPT
+    assert "exactly one of these six values" in CLASSIFY_SYSTEM_PROMPT
+
+
+def test_classify_prompt_distinguishes_deposit_amount_from_process():
+    """Deposit *amount* ("how much") stays a price question; deposit
+    *process* ("do I need one to book") is a booking question. Both clauses
+    must be present in their respective bullets so the model has the
+    distinction to work from."""
+    from app.intent import CLASSIFY_SYSTEM_PROMPT
+
+    assert "cost, price, deposit, rate, or a discount/promo" in CLASSIFY_SYSTEM_PROMPT
+    assert (
+        "whether a deposit is required to reserve a slot"
+        in CLASSIFY_SYSTEM_PROMPT
+    )
+
+
+@respx.mock
 async def test_classify_uses_prior_turns_for_a_context_dependent_message():
     """A bare "ναι" only makes sense with the preceding turn visible — this
     confirms classify() sends the full window, not just the last message, so
