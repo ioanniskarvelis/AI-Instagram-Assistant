@@ -1,6 +1,7 @@
 import json
 
 from scripts.rag_extract import (
+    AUTO_REPLY_TEXT,
     Pair,
     _collapse_turns,
     _load_thread_messages,
@@ -222,6 +223,39 @@ def test_extract_pairs_pairs_customer_then_studio():
             studio_reply_scrubbed="Στείλε φωτο για να δούμε, κοστίζει [price]",
         )
     ]
+
+
+def test_extract_pairs_drops_pair_whose_studio_turn_is_only_the_auto_reply():
+    messages = [
+        {"sender_name": "Maria", "content": "Γεια σας", "timestamp_ms": 1},
+        {
+            "sender_name": "2310tattoo studio by Christina",
+            "content": AUTO_REPLY_TEXT,
+            "timestamp_ms": 2,
+        },
+    ]
+    assert extract_pairs("THREAD1", messages) == []
+
+
+def test_extract_pairs_keeps_pair_when_real_content_follows_the_auto_reply():
+    messages = [
+        {"sender_name": "Maria", "content": "Γεια σας", "timestamp_ms": 1},
+        {
+            "sender_name": "2310tattoo studio by Christina",
+            "content": AUTO_REPLY_TEXT,
+            "timestamp_ms": 2,
+        },
+        {
+            "sender_name": "2310tattoo studio by Christina",
+            "content": "Καλησπέρα ναι βεβαίως στείλτε μας το σχέδιο",
+            "timestamp_ms": 3,
+        },
+    ]
+    pairs = extract_pairs("THREAD1", messages)
+    assert len(pairs) == 1
+    assert pairs[0].studio_reply_scrubbed == (
+        AUTO_REPLY_TEXT + "\nΚαλησπέρα ναι βεβαίως στείλτε μας το σχέδιο"
+    )
 
 
 def test_extract_pairs_skips_studio_only_thread():

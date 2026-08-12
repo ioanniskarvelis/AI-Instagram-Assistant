@@ -20,6 +20,20 @@ MIN_TURN_LENGTH = 3
 INBOX_DIR = Path("inbox")
 OUTPUT_PATH = Path("data/rag_corpus_review.jsonl")
 
+# The studio's automated first-contact reply (a Meta "instant reply" or saved
+# reply, not something Christina typed), sent verbatim across thousands of
+# threads. A pair whose entire studio turn is *exactly* this text carries no
+# style signal — it's canned, not organic phrasing — so it's dropped outright
+# rather than merely deduped down to one instance. If real content follows it
+# in the same turn (Christina typed something right after), the pair is kept.
+AUTO_REPLY_TEXT = (
+    "Γεια σας, έχουμε λάβει το μήνυμά σας και ευχαριστούμε που επικοινωνήσατε "
+    "μαζί μας. Αν ενδιαφέρεστε για tattoo στείλτε μας φωτογραφία τι σχέδιο "
+    "θέλετε και τι μέγεθος στο περίπου , για να μάθετε τιμή και για "
+    "οποιαδήποτε άλλη πληροφορία . σύντομα κάποιος εκπρόσωπος μας θα "
+    "επικοινωνήσει μαζι σας 😊😊\n②③①⓪ⓣⓔⓐⓜ"
+)
+
 _CURRENCY_PATTERN = re.compile(
     r"""
     (?:\d+(?:[.,]\d+)?\s*[-–]\s*)?   # optional range start, e.g. "100-"
@@ -217,6 +231,8 @@ def extract_pairs(thread_id: str, messages: list[dict]) -> list[Pair]:
         if role != "customer" or next_role != "studio":
             continue
         if not _is_substantial(text) or not _is_substantial(next_text):
+            continue
+        if next_text.strip() == AUTO_REPLY_TEXT.strip():
             continue
         pairs.append(
             Pair(
