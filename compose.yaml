@@ -8,6 +8,7 @@ services:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
       - history:/srv/data
+      - ./data/rag_index.json:/srv/data/rag_index.json:ro
     restart: unless-stopped
 
   tunnel:

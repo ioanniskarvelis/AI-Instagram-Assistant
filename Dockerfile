@@ -3,7 +3,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=3000 \
-    DB_PATH=/srv/data/history.db
+    DB_PATH=/srv/data/history.db \
+    RAG_INDEX_PATH=/srv/data/rag_index.json
 
 WORKDIR /srv
 

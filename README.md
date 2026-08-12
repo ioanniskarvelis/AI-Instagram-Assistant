@@ -62,3 +62,34 @@ To count or clear stored conversations:
 docker compose exec api python -c "import sqlite3; print(sqlite3.connect('/srv/data/history.db').execute('SELECT COUNT(*) FROM messages').fetchone()[0])"
 docker compose down -v   # removes the volume and all stored conversations
 ```
+
+## Style retrieval from past DMs (RAG)
+
+The assistant can draw on the studio's own past Instagram DM replies (a
+Meta data export placed at `inbox/` in the project root, never committed) to
+match its phrasing, without ever exposing an old price or booking time. This
+is optional — leave `VOYAGE_API_KEY` unset and the assistant behaves exactly
+as it does without it.
+
+To build or refresh the corpus:
+
+```bash
+# 1. Extract candidate (question, reply) pairs from inbox/
+.venv/Scripts/python -m scripts.rag_extract
+# writes data/rag_corpus_review.jsonl
+
+# 2. Review it. Copy your edited version to data/rag_corpus_approved.jsonl —
+#    only what you approve here ever reaches the model.
+cp data/rag_corpus_review.jsonl data/rag_corpus_approved.jsonl
+# ... edit data/rag_corpus_approved.jsonl by hand ...
+
+# 3. Embed the approved corpus via Voyage AI and write the runtime index
+VOYAGE_API_KEY=... .venv/Scripts/python -m scripts.rag_build_index
+# writes data/rag_index.json
+```
+
+`compose.yaml` bind-mounts `data/rag_index.json` read-only into the `api`
+container. Refreshing the corpus means re-running steps 1–3 and restarting
+the container (`docker compose restart api`) — no image rebuild needed. If
+`data/rag_index.json` doesn't exist yet, the assistant simply runs without
+style examples until you build one.
