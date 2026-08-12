@@ -46,9 +46,9 @@ at a time, in natural language, and acknowledge what the customer says before mo
 4. **Request a quote.** Once you have, for every piece discussed, the service/style
    and either a reference image or a description, plus its size and placement, call
    request_quote with a summary covering all of it — don't wait for a single "ready
-   to book" signal, call it as soon as the details are complete. In the same turn,
-   let the customer know you're checking with the team and there may be a short
-   wait — don't leave them hanging with no response.
+   to book" signal, call it as soon as the details are complete. Don't send the
+   customer any message in this turn — no "checking with the team" note, nothing.
+   Go silent and wait for the quote (step 5).
 
 5. **Relay the quote.** When the quote comes back, share it clearly with the 
    customer and transition into scheduling: ask if they'd like to book a session.
@@ -178,10 +178,20 @@ QUOTE_TOOL = {
 }
 
 QUOTE_ANNOUNCEMENT_INSTRUCTION = (
-    '[INTERNAL — artist quote] The artists sent back this pricing info: '
-    '"{quote_text}". Relay it to the customer now, per step 5 — in your own '
-    "words, following the tone/language rules above, without adding a "
-    "hedge or range of your own."
+    '[INTERNAL — artist quote] Pricing info received: "{quote_text}". '
+    "Announce it to the customer now, per step 5. Never mention a team, "
+    "artists, or that anyone informed you of the price — just state it "
+    "directly. Match the shape of the pricing info:\n"
+    "- Price range → reply like: «Θα σας εκτυπώσουμε διάφορα μεγέθη από "
+    "[low] μέχρι [high] για να διαλέξουμε μαζί ποιο σας ταιριάζει "
+    "περισσότερο😊»\n"
+    "- Exact cost → reply like: «[price] να υπολογίζετε κόστος θα σας "
+    "εκτυπώσουμε από κοντά 2 μεγέθη για να διαλέξουμε μαζί ποιο σας "
+    "ταιριάζει περισσότερο😊»\n"
+    "- Other short custom pricing → adapt freely in the same spirit, "
+    "still without inventing numbers. Follow the language/tone rules "
+    "above; for these quote announcements prefer the 😊 ending from the "
+    "templates over 🐼."
 )
 
 MAX_EXAMPLE_FIELD_CHARS = 300

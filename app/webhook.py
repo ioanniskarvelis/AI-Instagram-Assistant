@@ -165,8 +165,14 @@ async def _reply_to_burst(sender_id: str) -> None:
                 )
                 reply = None
         if reply is None:
-            reply_source = "canned"
-            reply = settings.canned_reply
+            if result.quote_summary:
+                # The model deliberately went silent this turn per step 4 —
+                # falling back to the canned reply would defeat that and
+                # tell the customer we're "checking" after all.
+                reply_source = "suppressed"
+            else:
+                reply_source = "canned"
+                reply = settings.canned_reply
 
         if result.quote_summary:
             await _request_quote(sender_id, result.quote_summary)

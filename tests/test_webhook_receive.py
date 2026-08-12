@@ -765,6 +765,71 @@ def test_gathered_details_trigger_a_telegram_quote_request(env, monkeypatch):
         assert _run(quotes.resolve_quote_request(777)) == "SENDER_1"
 
 
+def _mock_llm_with_intent_and_silent_quote(intent_value: str, summary: str):
+    """Like _mock_llm_with_intent_and_quote, but the generate call returns
+    only the request_quote tool_use block — no accompanying text — matching
+    step 4's "go silent" instruction."""
+
+    def responder(request):
+        body = json.loads(request.content)
+        tools = body.get("tools")
+        if tools and tools[0]["name"] == "classify_intent":
+            return httpx.Response(200, json=_tool_response(intent_value))
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_05",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_03",
+                        "name": "request_quote",
+                        "input": {"summary": summary},
+                    },
+                ],
+                "stop_reason": "tool_use",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        )
+
+    return respx.post(ANTHROPIC_ENDPOINT).mock(side_effect=responder)
+
+
+@respx.mock
+def test_silent_quote_request_sends_no_reply_but_still_reaches_telegram(env, monkeypatch):
+    _mock_llm_with_intent_and_silent_quote("design", "small rose, forearm, 5cm")
+    ig_route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+    telegram_message_route = respx.post(f"{TELEGRAM_BASE}/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {"message_id": 778}})
+    )
+
+    with _configured_telegram_client(monkeypatch) as client:
+        response = _post(
+            client, _body({"mid": "m1", "text": "μικρό τριαντάφυλλο στον καρπό, 5cm"})
+        )
+
+        assert response.status_code == 200
+        assert ig_route.call_count == 0  # no reply sent to the customer
+
+        assert telegram_message_route.called
+        telegram_body = json.loads(telegram_message_route.calls.last.request.content)
+        assert "small rose, forearm, 5cm" in telegram_body["text"]
+
+        assert _traces("SENDER_1") == [
+            {"intent": "design", "reply_source": "suppressed", "reply": None}
+        ]
+        # No assistant turn recorded — nothing was actually sent.
+        assert _stored("SENDER_1") == [
+            ("user", "μικρό τριαντάφυλλο στον καρπό, 5cm")
+        ]
+
+
 @respx.mock
 def test_quote_request_includes_reference_images_sent_earlier(env, monkeypatch):
     """The image and the follow-up text arrive within the debounce window
