@@ -283,3 +283,62 @@ def test_send_failure_still_returns_200(client):
     response = _post(client, _body({"mid": "m5", "text": "hello"}))
 
     assert response.status_code == 200
+
+
+@respx.mock
+def test_style_examples_reach_the_system_prompt(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.rag import _load_index
+
+    index_path = tmp_path / "rag_index.json"
+    index_path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Γεια σας",
+                    "reply": "Καλησπέρα, πώς μπορούμε να βοηθήσουμε;",
+                    "embedding": [1.0, 0.0],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VOYAGE_API_KEY", "test-voyage-key")
+    monkeypatch.setenv("RAG_INDEX_PATH", str(index_path))
+    get_settings.cache_clear()
+    _load_index.cache_clear()
+
+    respx.post("https://api.voyageai.com/v1/embeddings").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [{"object": "embedding", "embedding": [1.0, 0.0], "index": 0}],
+                "model": "voyage-3.5",
+                "usage": {"total_tokens": 1},
+            },
+        )
+    )
+    llm = _mock_llm()
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    _post(client, _body({"mid": "m1", "text": "Γεία σας"}))
+
+    body = json.loads(llm.calls.last.request.content)
+    assert "Καλησπέρα, πώς μπορούμε να βοηθήσουμε;" in body["system"][0]["text"]
+
+
+@respx.mock
+def test_no_style_examples_when_voyage_key_unset(client):
+    """Today's behavior, unchanged: no VOYAGE_API_KEY means no RAG block."""
+    llm = _mock_llm()
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    _post(client, _body({"mid": "m1", "text": "Γεία σας"}))
+
+    body = json.loads(llm.calls.last.request.content)
+    assert "STYLE REFERENCE" not in body["system"][0]["text"]

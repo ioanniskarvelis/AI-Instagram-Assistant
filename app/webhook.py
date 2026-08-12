@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.history import Turn, append, recent
 from app.instagram import MAX_MESSAGE_BYTES, send_text
 from app.llm import generate_reply
+from app.rag import retrieve
 from app.schemas import WebhookPayload
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,8 @@ async def receive(request: Request) -> Response:
             # than going silent.
             window = [Turn(role="user", text=text)]
 
-        reply = await generate_reply(window)
+        examples = await retrieve(text, settings.rag_top_k)
+        reply = await generate_reply(window, examples)
         if reply is not None:
             reply_bytes = len(reply.encode("utf-8"))
             if reply_bytes > MAX_MESSAGE_BYTES:
