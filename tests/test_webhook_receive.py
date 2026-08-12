@@ -342,3 +342,107 @@ def test_no_style_examples_when_openrouter_key_unset(client):
 
     body = json.loads(llm.calls.last.request.content)
     assert "STYLE REFERENCE" not in body["system"][0]["text"]
+
+
+def _tool_response(intent_value: str) -> dict:
+    return {
+        "id": "msg_03",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5-20251001",
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "toolu_01",
+                "name": "classify_intent",
+                "input": {"intent": intent_value},
+            }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+
+def _mock_llm_with_intent(intent_value: str, reply_text: str = GENERATED):
+    """Mocks both concurrent Anthropic calls (classify + generate) on the
+    same endpoint, routing by request shape: a classification call carries
+    "tools"/forced tool_choice, a generation call does not."""
+
+    def responder(request):
+        body = json.loads(request.content)
+        if "tools" in body:
+            return httpx.Response(200, json=_tool_response(intent_value))
+        return httpx.Response(200, json=_anthropic_reply(reply_text))
+
+    return respx.post(ANTHROPIC_ENDPOINT).mock(side_effect=responder)
+
+
+@respx.mock
+def test_intent_addendum_reaches_the_system_prompt(client):
+    from app.intent import Intent
+    from app.llm import INTENT_ADDENDA
+
+    llm = _mock_llm_with_intent("price")
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    _post(client, _body({"mid": "m1", "text": "Πόσο κοστίζει ένα τατουάζ;"}))
+
+    generate_calls = [
+        call for call in llm.calls
+        if "tools" not in json.loads(call.request.content)
+    ]
+    body = json.loads(generate_calls[-1].request.content)
+    assert INTENT_ADDENDA[Intent.PRICE] in body["system"][0]["text"]
+
+
+@respx.mock
+def test_general_intent_adds_no_addendum(client):
+    from app.llm import SYSTEM_PROMPT
+
+    llm = _mock_llm_with_intent("general")
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    generate_calls = [
+        call for call in llm.calls
+        if "tools" not in json.loads(call.request.content)
+    ]
+    body = json.loads(generate_calls[-1].request.content)
+    assert body["system"][0]["text"] == SYSTEM_PROMPT
+
+
+@respx.mock
+def test_classification_failure_still_sends_a_reply(client):
+    """A broken classifier degrades to Intent.GENERAL — same never-block
+    posture as a broken RAG index. The reply still goes out."""
+    from app.llm import SYSTEM_PROMPT
+
+    def responder(request):
+        body = json.loads(request.content)
+        if "tools" in body:
+            return httpx.Response(500, json={"error": "boom"})
+        return httpx.Response(200, json=_anthropic_reply())
+
+    llm = respx.post(ANTHROPIC_ENDPOINT).mock(side_effect=responder)
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    response = _post(client, _body({"mid": "m1", "text": "Γεια σας"}))
+
+    assert response.status_code == 200
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["message"]["text"] == GENERATED
+
+    generate_calls = [
+        call for call in llm.calls
+        if "tools" not in json.loads(call.request.content)
+    ]
+    body = json.loads(generate_calls[-1].request.content)
+    assert body["system"][0]["text"] == SYSTEM_PROMPT

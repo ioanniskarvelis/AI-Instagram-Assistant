@@ -10,6 +10,7 @@ from app import admin_store
 from app.config import get_settings
 from app.history import Turn, append, recent
 from app.instagram import MAX_MESSAGE_BYTES, send_text
+from app.intent import classify
 from app.llm import generate_reply
 from app.rag import retrieve
 from app.schemas import WebhookPayload
@@ -98,9 +99,13 @@ async def receive(request: Request) -> Response:
             # than going silent.
             window = [Turn(role="user", text=text)]
 
-        # retrieve() never raises; it degrades to [] on any internal failure (missing index, API errors, etc).
-        examples = await retrieve(text, settings.rag_top_k)
-        reply = await generate_reply(window, examples)
+        # retrieve() and classify() never raise; each degrades independently
+        # (examples to [], intent to Intent.GENERAL) on any internal failure.
+        examples, msg_intent = await asyncio.gather(
+            retrieve(text, settings.rag_top_k),
+            classify(window),
+        )
+        reply = await generate_reply(window, examples, msg_intent)
         if reply is not None:
             reply_bytes = len(reply.encode("utf-8"))
             if reply_bytes > MAX_MESSAGE_BYTES:
