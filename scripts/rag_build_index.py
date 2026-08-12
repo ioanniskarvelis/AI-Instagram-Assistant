@@ -36,7 +36,8 @@ def _embed_batch(texts: list[str], api_key: str) -> list[list[float]]:
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
-    return [item["embedding"] for item in response.json()["data"]]
+    data = sorted(response.json()["data"], key=lambda item: item["index"])
+    return [item["embedding"] for item in data]
 
 
 def build_index(entries: list[dict], api_key: str) -> list[dict]:
@@ -44,7 +45,7 @@ def build_index(entries: list[dict], api_key: str) -> list[dict]:
     for start in range(0, len(entries), BATCH_SIZE):
         batch = entries[start : start + BATCH_SIZE]
         embeddings = _embed_batch([entry["customer"] for entry in batch], api_key)
-        for entry, embedding in zip(batch, embeddings):
+        for entry, embedding in zip(batch, embeddings, strict=True):
             indexed.append(
                 {
                     "question": entry["customer"],

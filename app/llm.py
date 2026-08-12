@@ -39,12 +39,19 @@ STYLE_BLOCK_FOOTER = (
     "above still apply."
 )
 
+MAX_EXAMPLE_FIELD_CHARS = 300
+
+
+def _truncate(text: str, limit: int = MAX_EXAMPLE_FIELD_CHARS) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
 
 def _render_style_block(examples: list[Example]) -> str:
     parts = [STYLE_BLOCK_HEADER]
     for i, example in enumerate(examples, start=1):
         parts.append(
-            f"Example {i}\nCustomer: {example.question}\nStudio: {example.reply}"
+            f"Example {i}\nCustomer: {_truncate(example.question)}\n"
+            f"Studio: {_truncate(example.reply)}"
         )
     parts.append(STYLE_BLOCK_FOOTER)
     return "\n\n".join(parts)

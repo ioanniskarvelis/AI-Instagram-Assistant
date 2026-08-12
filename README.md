@@ -71,25 +71,49 @@ match its phrasing, without ever exposing an old price or booking time. This
 is optional — leave `VOYAGE_API_KEY` unset and the assistant behaves exactly
 as it does without it.
 
+Before your first `docker compose up`, create a placeholder index file so
+Docker never turns the bind-mount path into a directory (see below):
+
+```powershell
+'[]' | Set-Content -Encoding utf8 data\rag_index.json
+```
+
+This must be a real *file*, not a directory. If `data/rag_index.json`
+already exists as a directory (from an earlier `docker compose up` before
+this file existed), delete it first — `Remove-Item -Recurse -Force
+data\rag_index.json` — then create the placeholder above.  `app/rag.py`'s
+`_load_index` already handles an empty/`[]` corpus gracefully, degrading to
+no style examples.
+
+Both scripts below use paths relative to the current working directory
+(`inbox/`, `data/...`), so run them from the repository root.
+
 To build or refresh the corpus:
 
-```bash
+```powershell
 # 1. Extract candidate (question, reply) pairs from inbox/
-.venv/Scripts/python -m scripts.rag_extract
+.venv\Scripts\python -m scripts.rag_extract
 # writes data/rag_corpus_review.jsonl
 
 # 2. Review it. Copy your edited version to data/rag_corpus_approved.jsonl —
 #    only what you approve here ever reaches the model.
-cp data/rag_corpus_review.jsonl data/rag_corpus_approved.jsonl
+Copy-Item data\rag_corpus_review.jsonl data\rag_corpus_approved.jsonl
 # ... edit data/rag_corpus_approved.jsonl by hand ...
 
 # 3. Embed the approved corpus via Voyage AI and write the runtime index
-VOYAGE_API_KEY=... .venv/Scripts/python -m scripts.rag_build_index
+$env:VOYAGE_API_KEY="..."; .venv\Scripts\python -m scripts.rag_build_index
 # writes data/rag_index.json
 ```
 
 `compose.yaml` bind-mounts `data/rag_index.json` read-only into the `api`
 container. Refreshing the corpus means re-running steps 1–3 and restarting
-the container (`docker compose restart api`) — no image rebuild needed. If
-`data/rag_index.json` doesn't exist yet, the assistant simply runs without
-style examples until you build one.
+the container (`docker compose restart api`) — no image rebuild needed.
+
+Two related facts worth knowing about that bind mount: if
+`data/rag_index.json` doesn't exist on the host at all when Docker starts
+the container, Docker silently creates it as an empty *directory* rather
+than failing — which then breaks `scripts/rag_build_index.py`'s attempt to
+write the index file (`IsADirectoryError`). That's why the placeholder step
+above matters. Separately, if the mounted file legitimately contains no
+examples yet (e.g. the placeholder `[]`), the assistant degrades safely and
+simply runs without style examples until you build a real index.

@@ -131,6 +131,30 @@ async def test_retrieve_returns_empty_for_empty_corpus(monkeypatch, tmp_path):
 
 
 @respx.mock
+async def test_retrieve_returns_empty_on_embedding_dimension_mismatch(monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.rag import _load_index, retrieve
+
+    index_path = tmp_path / "rag_index.json"
+    _write_index(
+        index_path,
+        [{"question": "q", "reply": "r", "embedding": [1.0, 0.0]}],
+    )
+    monkeypatch.setenv("VOYAGE_API_KEY", "test-voyage-key")
+    monkeypatch.setenv("RAG_INDEX_PATH", str(index_path))
+    get_settings.cache_clear()
+    _load_index.cache_clear()
+
+    # Index embeddings are 2-D; the query embedding Voyage returns here is
+    # 3-D — simulating an index built with a different Voyage model.
+    respx.post(VOYAGE_ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_embed_response([[1.0, 0.0, 0.0]]))
+    )
+
+    assert await retrieve("query", k=3) == []
+
+
+@respx.mock
 async def test_retrieve_returns_empty_for_schema_malformed_index(monkeypatch, tmp_path):
     from app.config import get_settings
     from app.rag import _load_index, retrieve

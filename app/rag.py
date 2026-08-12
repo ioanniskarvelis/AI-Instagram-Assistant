@@ -81,7 +81,9 @@ async def _embed_query(text: str, api_key: str, model: str) -> "np.ndarray | Non
 def _top_k(embeddings: np.ndarray, query: np.ndarray, k: int) -> list[int]:
     embedding_norms = np.linalg.norm(embeddings, axis=1)
     query_norm = np.linalg.norm(query)
-    scores = (embeddings @ query) / (embedding_norms * query_norm)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        scores = (embeddings @ query) / (embedding_norms * query_norm)
+    scores = np.nan_to_num(scores, nan=-np.inf)
     ranked = np.argsort(scores)[::-1]
     return [int(i) for i in ranked[:k]]
 
@@ -107,5 +109,10 @@ async def retrieve(text: str, k: int) -> list[Example]:
     if query_embedding is None:
         return []
 
-    top_indices = _top_k(index.embeddings, query_embedding, k)
+    try:
+        top_indices = _top_k(index.embeddings, query_embedding, k)
+    except Exception:
+        logger.exception("Ranking failed against the loaded index")
+        return []
+
     return [index.examples[i] for i in top_indices]

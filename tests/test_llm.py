@@ -126,6 +126,32 @@ async def test_generate_reply_includes_style_examples_after_rules():
 
 
 @respx.mock
+async def test_generate_reply_truncates_long_examples_in_style_block():
+    from app.history import Turn
+    from app.llm import MAX_EXAMPLE_FIELD_CHARS, generate_reply
+    from app.rag import Example
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    long_reply = "x" * (MAX_EXAMPLE_FIELD_CHARS + 50)
+    short_reply = "a short reply"
+    examples = [
+        Example(question="short question", reply=long_reply),
+        Example(question="another short question", reply=short_reply),
+    ]
+    await generate_reply([Turn(role="user", text="γεια")], examples)
+
+    body = json.loads(route.calls.last.request.content)
+    system_text = body["system"][0]["text"]
+
+    assert long_reply not in system_text
+    assert ("x" * (MAX_EXAMPLE_FIELD_CHARS - 1) + "…") in system_text
+    assert short_reply in system_text
+
+
+@respx.mock
 async def test_generate_reply_without_examples_matches_todays_prompt():
     from app.history import Turn
     from app.llm import SYSTEM_PROMPT, generate_reply

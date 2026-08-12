@@ -13,6 +13,7 @@ tests/
 docs/
 .remember/
 inbox/
+data/
 README.md
 requirements-dev.txt
 pytest.ini
