@@ -10,7 +10,6 @@ venv/
 inbox/
 data/rag_corpus_review.jsonl
 data/rag_corpus_approved.jsonl
-data/rag_index.json
 .DS_Store
 Thumbs.db
 .idea/
