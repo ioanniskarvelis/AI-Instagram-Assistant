@@ -98,6 +98,7 @@ async def receive(request: Request) -> Response:
             # than going silent.
             window = [Turn(role="user", text=text)]
 
+        # retrieve() never raises; it degrades to [] on any internal failure (missing index, API errors, etc).
         examples = await retrieve(text, settings.rag_top_k)
         reply = await generate_reply(window, examples)
         if reply is not None:
