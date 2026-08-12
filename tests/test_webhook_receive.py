@@ -482,12 +482,13 @@ def test_aftercare_intent_reaches_the_system_prompt(client):
     from app.llm import INTENT_ADDENDA
 
     llm = _mock_llm_with_intent("aftercare")
-    respx.post(ENDPOINT).mock(
+    route = respx.post(ENDPOINT).mock(
         return_value=httpx.Response(200, json={"message_id": "mid.1"})
     )
 
     _post(client, _body({"mid": "m1", "text": "μου κοκκίνισε γύρω γύρω"}))
 
+    assert route.call_count == 1  # reply was actually sent, unlike complaint
     generate_calls = [
         call for call in llm.calls
         if "tools" not in json.loads(call.request.content)

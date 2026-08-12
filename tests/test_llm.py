@@ -261,7 +261,8 @@ def test_design_addendum_covers_high_risk_placement():
 
     text = INTENT_ADDENDA[Intent.DESIGN]
     assert "fingers" in text
-    assert "additional cost" in text
+    assert "touch-up" in text
+    assert "artist will confirm" in text
 
 
 def test_aftercare_addendum_redirects_concerning_symptoms():
@@ -276,8 +277,9 @@ def test_aftercare_addendum_redirects_concerning_symptoms():
 @respx.mock
 async def test_generate_reply_unmapped_intent_degrades_to_no_addendum():
     """INTENT_ADDENDA has no entry for a value like this (Intent is closed to
-    exactly PRICE/BOOKING/DESIGN/GENERAL today, so nothing produces this at
-    runtime yet) — generate_reply must degrade to the base prompt via
+    exactly PRICE/BOOKING/DESIGN/AFTERCARE/COMPLAINT/GENERAL today, so
+    nothing produces this at runtime yet) — generate_reply must degrade to
+    the base prompt via
     INTENT_ADDENDA.get(), never raise a KeyError, if the enum ever grows
     without a matching addendum."""
     from app.history import Turn

@@ -64,9 +64,9 @@ INTENT_ADDENDA: dict[Intent, str] = {
         "clarifying question (placement, size, style, reference images) "
         "if a key detail is missing. If the placement is a high-fade-risk "
         "area (fingers, hands, lips, palms, soles, inside the mouth), "
-        "briefly note that retention isn't guaranteed there and a "
-        "touch-up may involve an additional cost the artist will "
-        "confirm — one sentence is enough, don't lecture."
+        "briefly note that retention isn't guaranteed there and the "
+        "artist will confirm how touch-ups are handled — one sentence is "
+        "enough, don't lecture."
     ),
     Intent.AFTERCARE: (
         "The customer is asking about healing or aftercare. General, "

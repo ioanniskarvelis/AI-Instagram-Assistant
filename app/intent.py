@@ -44,6 +44,11 @@ with a tattoo or the service received — not just a neutral question. E.g. \
 "Δεν είμαι καθόλου ευχαριστημένος με το αποτέλεσμα", "This isn't what I \
 asked for", "το τατουάζ μου χάλασε και δεν απαντάτε", "θέλω να κάνω \
 παράπονο"
+
+If the message asks about a healing problem, symptom, or reaction — even \
+in a frustrated or worried tone — classify it as aftercare, not complaint. \
+Use complaint only for dissatisfaction with the result or the service \
+where no answerable question is being asked.
 - general: anything else — greetings, thanks, small talk, studio-info \
 questions (hours, location, artist), or unclear messages.
 
