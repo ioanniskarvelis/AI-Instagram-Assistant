@@ -10,7 +10,7 @@ from app import admin_store
 from app.config import get_settings
 from app.history import Turn, append, recent
 from app.instagram import MAX_MESSAGE_BYTES, send_text
-from app.intent import classify
+from app.intent import Intent, classify
 from app.llm import generate_reply
 from app.rag import retrieve
 from app.schemas import WebhookPayload
@@ -105,6 +105,16 @@ async def receive(request: Request) -> Response:
             retrieve(text, settings.rag_top_k),
             classify(window),
         )
+
+        if msg_intent is Intent.COMPLAINT:
+            logger.info(
+                "Auto-disabling conversation %s: classified as complaint", sender_id
+            )
+            await asyncio.to_thread(
+                admin_store.set_conversation_disabled, sender_id, True
+            )
+            continue
+
         reply = await generate_reply(window, examples, msg_intent)
         if reply is not None:
             reply_bytes = len(reply.encode("utf-8"))

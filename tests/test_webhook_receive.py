@@ -446,3 +446,51 @@ def test_classification_failure_still_sends_a_reply(client):
     ]
     body = json.loads(generate_calls[-1].request.content)
     assert body["system"][0]["text"] == SYSTEM_PROMPT
+
+
+@respx.mock
+def test_complaint_intent_suppresses_reply_and_disables_conversation(client):
+    from app import admin_store
+
+    llm = _mock_llm_with_intent("complaint")
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    response = _post(
+        client,
+        _body({"mid": "m1", "text": "Δεν είμαι καθόλου ευχαριστημένος με το αποτέλεσμα"}),
+    )
+
+    assert response.status_code == 200
+    assert route.call_count == 0  # no Instagram send
+    assert admin_store.get_conversation_disabled("SENDER_1") is True
+    assert _stored("SENDER_1") == [
+        ("user", "Δεν είμαι καθόλου ευχαριστημένος με το αποτέλεσμα")
+    ]
+
+    generate_calls = [
+        call for call in llm.calls
+        if "tools" not in json.loads(call.request.content)
+    ]
+    assert generate_calls == []  # generate_reply's API call never fired
+
+
+@respx.mock
+def test_aftercare_intent_reaches_the_system_prompt(client):
+    from app.intent import Intent
+    from app.llm import INTENT_ADDENDA
+
+    llm = _mock_llm_with_intent("aftercare")
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"message_id": "mid.1"})
+    )
+
+    _post(client, _body({"mid": "m1", "text": "μου κοκκίνισε γύρω γύρω"}))
+
+    generate_calls = [
+        call for call in llm.calls
+        if "tools" not in json.loads(call.request.content)
+    ]
+    body = json.loads(generate_calls[-1].request.content)
+    assert INTENT_ADDENDA[Intent.AFTERCARE] in body["system"][0]["text"]
