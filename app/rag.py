@@ -25,6 +25,16 @@ class Example:
 
 
 @dataclass(frozen=True)
+class ScoredExample:
+    """An `Example` plus the cosine similarity that ranked it — the
+    observability-only counterpart of `retrieve()`'s plain result, so a trace
+    can show *why* an example was picked, not just that it was."""
+
+    example: Example
+    score: float
+
+
+@dataclass(frozen=True)
 class _Index:
     examples: list[Example]
     embeddings: np.ndarray  # shape (n, dim), one row per example
@@ -87,22 +97,23 @@ async def _embed_query(text: str, api_key: str, model: str) -> "np.ndarray | Non
     return np.array(embedding, dtype=np.float32)
 
 
-def _top_k(embeddings: np.ndarray, query: np.ndarray, k: int) -> list[int]:
+def _top_k(embeddings: np.ndarray, query: np.ndarray, k: int) -> list[tuple[int, float]]:
     embedding_norms = np.linalg.norm(embeddings, axis=1)
     query_norm = np.linalg.norm(query)
     with np.errstate(invalid="ignore", divide="ignore"):
         scores = (embeddings @ query) / (embedding_norms * query_norm)
     scores = np.nan_to_num(scores, nan=-np.inf)
-    ranked = np.argsort(scores)[::-1]
-    return [int(i) for i in ranked[:k]]
+    ranked = np.argsort(scores)[::-1][:k]
+    return [(int(i), float(scores[i])) for i in ranked]
 
 
-async def retrieve(text: str, k: int) -> list[Example]:
-    """Return the top-k past exchanges most similar to `text`.
+async def retrieve_scored(text: str, k: int) -> list[ScoredExample]:
+    """Return the top-k past exchanges most similar to `text`, with scores.
 
     Never raises: returns [] whenever retrieval isn't usable (no API key, no
     index, an embedding call fails) so a retrieval problem never blocks a
-    reply going out.
+    reply going out. `retrieve()` is a thin wrapper over this for callers
+    that only need the examples, not the scores.
     """
     settings = get_settings()
     if not settings.openrouter_api_key:
@@ -119,9 +130,14 @@ async def retrieve(text: str, k: int) -> list[Example]:
         return []
 
     try:
-        top_indices = _top_k(index.embeddings, query_embedding, k)
+        ranked = _top_k(index.embeddings, query_embedding, k)
     except Exception:
         logger.exception("Ranking failed against the loaded index")
         return []
 
-    return [index.examples[i] for i in top_indices]
+    return [ScoredExample(index.examples[i], score) for i, score in ranked]
+
+
+async def retrieve(text: str, k: int) -> list[Example]:
+    """Return the top-k past exchanges most similar to `text`."""
+    return [scored.example for scored in await retrieve_scored(text, k)]

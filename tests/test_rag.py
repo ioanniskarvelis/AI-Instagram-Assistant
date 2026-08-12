@@ -54,6 +54,35 @@ async def test_retrieve_returns_top_k_by_similarity(monkeypatch, tmp_path):
 
 
 @respx.mock
+async def test_retrieve_scored_returns_examples_with_similarity_scores(monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.rag import Example, ScoredExample, _load_index, retrieve_scored
+
+    index_path = tmp_path / "rag_index.json"
+    _write_index(
+        index_path,
+        [
+            {"question": "close match", "reply": "reply A", "embedding": [1.0, 0.0]},
+            {"question": "far match", "reply": "reply B", "embedding": [0.0, 1.0]},
+        ],
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    monkeypatch.setenv("RAG_INDEX_PATH", str(index_path))
+    get_settings.cache_clear()
+    _load_index.cache_clear()
+
+    respx.post(EMBEDDING_ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_embed_response([[1.0, 0.0]]))
+    )
+
+    results = await retrieve_scored("query", k=2)
+
+    assert results[0] == ScoredExample(Example(question="close match", reply="reply A"), 1.0)
+    assert results[1].example == Example(question="far match", reply="reply B")
+    assert results[1].score < results[0].score
+
+
+@respx.mock
 async def test_retrieve_returns_empty_without_api_key(monkeypatch, tmp_path):
     from app.config import get_settings
     from app.rag import _load_index, retrieve

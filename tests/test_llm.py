@@ -34,7 +34,7 @@ async def test_generate_reply_returns_text_and_sends_the_window():
         Turn(role="assistant", text="γεια σου"),
         Turn(role="user", text="πόσο κάνει;"),
     ]
-    assert await generate_reply(turns) == "Καλησπέρα!"
+    assert (await generate_reply(turns)).text == "Καλησπέρα!"
 
     body = json.loads(route.calls.last.request.content)
     assert body["model"] == "claude-sonnet-5"
@@ -62,7 +62,7 @@ async def test_generate_reply_returns_none_on_api_error():
         )
     )
 
-    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+    assert (await generate_reply([Turn(role="user", text="γεια")])).text is None
 
 
 @respx.mock
@@ -72,7 +72,7 @@ async def test_generate_reply_returns_none_on_transport_error():
 
     respx.post(ENDPOINT).mock(side_effect=httpx.ConnectError("boom"))
 
-    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+    assert (await generate_reply([Turn(role="user", text="γεια")])).text is None
 
 
 @respx.mock
@@ -84,7 +84,7 @@ async def test_generate_reply_returns_none_on_refusal():
     refusal["content"] = []
     respx.post(ENDPOINT).mock(return_value=httpx.Response(200, json=refusal))
 
-    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+    assert (await generate_reply([Turn(role="user", text="γεια")])).text is None
 
 
 @respx.mock
@@ -98,7 +98,7 @@ async def test_generate_reply_returns_none_on_truncation():
         )
     )
 
-    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+    assert (await generate_reply([Turn(role="user", text="γεια")])).text is None
 
 
 @respx.mock
@@ -294,7 +294,7 @@ async def test_generate_reply_unmapped_intent_degrades_to_no_addendum():
 
     reply = await generate_reply([Turn(role="user", text="γεια")], intent=unmapped)
 
-    assert reply == "Καλησπέρα!"
+    assert reply.text == "Καλησπέρα!"
     body = json.loads(route.calls.last.request.content)
     assert body["system"][0]["text"] == SYSTEM_PROMPT
 
@@ -322,3 +322,184 @@ async def test_generate_reply_intent_addendum_precedes_style_block():
     addendum_index = system_text.index(INTENT_ADDENDA[Intent.PRICE])
     style_index = system_text.index("STYLE REFERENCE")
     assert addendum_index < style_index
+
+
+def _tool_use(name: str, input_: dict, stop_reason: str = "tool_use") -> dict:
+    return {
+        "id": "msg_02",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": [
+            {"type": "tool_use", "id": "toolu_01", "name": name, "input": input_}
+        ],
+        "stop_reason": stop_reason,
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+
+def _text_and_tool_use(text: str, name: str, input_: dict) -> dict:
+    return {
+        "id": "msg_03",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": [
+            {"type": "text", "text": text},
+            {"type": "tool_use", "id": "toolu_01", "name": name, "input": input_},
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+
+@respx.mock
+async def test_generate_reply_omits_quote_tool_when_telegram_not_configured():
+    from app.history import Turn
+    from app.llm import generate_reply
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    await generate_reply([Turn(role="user", text="γεια")])
+
+    body = json.loads(route.calls.last.request.content)
+    assert "tools" not in body
+
+
+@respx.mock
+async def test_generate_reply_offers_quote_tool_when_telegram_configured(env, monkeypatch):
+    from app.config import get_settings
+    from app.history import Turn
+    from app.llm import QUOTE_TOOL_NAME, generate_reply
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "TEST_TOKEN")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+    get_settings.cache_clear()
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    await generate_reply([Turn(role="user", text="γεια")])
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["tools"][0]["name"] == QUOTE_TOOL_NAME
+    assert body["tool_choice"] == {"type": "auto"}
+
+
+@respx.mock
+async def test_generate_reply_returns_text_and_quote_summary_together(env, monkeypatch):
+    from app.config import get_settings
+    from app.history import Turn
+    from app.llm import generate_reply
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "TEST_TOKEN")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+    get_settings.cache_clear()
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            200,
+            json=_text_and_tool_use(
+                "Ένα λεπτό, το ελέγχουμε με την ομάδα! 🐼",
+                "request_quote",
+                {"summary": "small rose, forearm, 5cm, reference image provided"},
+            ),
+        )
+    )
+
+    result = await generate_reply([Turn(role="user", text="γεια")])
+
+    assert result.text == "Ένα λεπτό, το ελέγχουμε με την ομάδα! 🐼"
+    assert result.quote_summary == "small rose, forearm, 5cm, reference image provided"
+
+
+@respx.mock
+async def test_generate_reply_tool_only_response_has_no_text(env, monkeypatch):
+    from app.config import get_settings
+    from app.history import Turn
+    from app.llm import generate_reply
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "TEST_TOKEN")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+    get_settings.cache_clear()
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            200, json=_tool_use("request_quote", {"summary": "small rose, forearm"})
+        )
+    )
+
+    result = await generate_reply([Turn(role="user", text="γεια")])
+
+    assert result.text is None
+    assert result.quote_summary == "small rose, forearm"
+
+
+@respx.mock
+async def test_generate_quote_announcement_appends_a_new_instruction_turn():
+    from app.history import Turn
+    from app.llm import generate_quote_announcement
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Η τιμή είναι 150€! 🐼"))
+    )
+
+    turns = [
+        Turn(role="user", text="θέλω ένα τριαντάφυλλο"),
+        Turn(role="assistant", text="ωραία, στείλε φωτο"),
+    ]
+    reply = await generate_quote_announcement(turns, "150")
+
+    assert reply == "Η τιμή είναι 150€! 🐼"
+    body = json.loads(route.calls.last.request.content)
+    assert len(body["messages"]) == 3
+    assert body["messages"][-1]["role"] == "user"
+    assert "150" in body["messages"][-1]["content"]
+    assert "[INTERNAL — artist quote]" in body["messages"][-1]["content"]
+
+
+@respx.mock
+async def test_generate_quote_announcement_merges_into_trailing_user_turn():
+    """Anthropic rejects two consecutive same-role messages, so when the
+    window's last turn is already the customer's (no assistant reply sent
+    yet), the instruction must merge into it rather than append a second
+    user turn."""
+    from app.history import Turn
+    from app.llm import generate_quote_announcement
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Η τιμή είναι 150€! 🐼"))
+    )
+
+    turns = [Turn(role="user", text="θέλω ένα τριαντάφυλλο")]
+    await generate_quote_announcement(turns, "150")
+
+    body = json.loads(route.calls.last.request.content)
+    assert len(body["messages"]) == 1
+    assert body["messages"][0]["role"] == "user"
+    assert "θέλω ένα τριαντάφυλλο" in body["messages"][0]["content"]
+    assert "150" in body["messages"][0]["content"]
+
+
+@respx.mock
+async def test_generate_quote_announcement_returns_none_on_failure():
+    from app.history import Turn
+    from app.llm import generate_quote_announcement
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            400,
+            json={"type": "error", "error": {"type": "invalid_request_error", "message": "bad"}},
+        )
+    )
+
+    reply = await generate_quote_announcement(
+        [Turn(role="user", text="γεια")], "150"
+    )
+
+    assert reply is None

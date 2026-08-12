@@ -39,6 +39,15 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setenv("RAG_INDEX_PATH", str(tmp_path / "rag_index.json"))
     monkeypatch.setenv("INTENT_MODEL", "claude-haiku-4-5-20251001")
     monkeypatch.setenv("INTENT_MAX_TOKENS", "50")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "")
+    # Reply generation now waits out a burst-debounce window in the
+    # background before replying (see app.webhook). Zero it by default so
+    # existing tests, which post one message and expect an immediate reply,
+    # keep working; tests of the debounce/coalescing behavior itself override
+    # this explicitly.
+    monkeypatch.setenv("REPLY_DEBOUNCE_SECONDS", "0")
 
     from app.config import get_settings
     from app.rag import _load_index

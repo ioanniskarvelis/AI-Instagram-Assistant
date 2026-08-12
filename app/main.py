@@ -7,7 +7,9 @@ from fastapi import FastAPI
 
 from app import db
 from app.admin import router as admin_router
+from app.admin_ui import router as admin_ui_router
 from app.config import get_settings
+from app.telegram_webhook import router as telegram_router
 from app.webhook import router
 
 
@@ -42,6 +44,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(router)
     app.include_router(admin_router)
+    app.include_router(admin_ui_router)
+    app.include_router(telegram_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

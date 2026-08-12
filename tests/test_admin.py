@@ -169,3 +169,81 @@ def test_reset_conversation_history(client):
     assert resp.json() == {"ok": True}
 
     assert client.get("/admin/conversations/SENDER_1", headers=AUTH).status_code == 404
+
+
+# ── Traces ───────────────────────────────────────────────────────────────
+
+
+def _seed_trace(**overrides):
+    import asyncio
+
+    from app.trace import HistoryTurn, RetrievalHit, TraceRecord, save
+
+    defaults = dict(
+        sender_id="SENDER_1",
+        incoming_text="Πόσο κοστίζει;",
+        history_window=[HistoryTurn(role="user", text="Πόσο κοστίζει;")],
+        intent="price",
+        intent_latency_ms=10.0,
+        retrieval_hits=[RetrievalHit(question="q", reply="r", score=0.9)],
+        retrieval_latency_ms=5.0,
+        system_prompt="SYSTEM PROMPT",
+        reply="Η καλλιτέχνις θα σου απαντήσει.",
+        reply_source="generated",
+        llm_latency_ms=100.0,
+        total_latency_ms=120.0,
+    )
+    defaults.update(overrides)
+    asyncio.run(save(TraceRecord(**defaults)))
+
+
+def test_traces_route_requires_auth(client):
+    _seed_trace()
+    assert client.get("/admin/traces").status_code == 401
+
+
+def test_list_traces_returns_summaries(client):
+    _seed_trace()
+    resp = client.get("/admin/traces", headers=AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["sender_id"] == "SENDER_1"
+    assert body[0]["intent"] == "price"
+    assert body[0]["reply_source"] == "generated"
+    assert "history_window" not in body[0]  # summary, not detail
+
+
+def test_list_traces_filters_by_sender_id(client):
+    _seed_trace(sender_id="SENDER_1")
+    _seed_trace(sender_id="SENDER_2")
+
+    resp = client.get("/admin/traces", params={"sender_id": "SENDER_2"}, headers=AUTH)
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["sender_id"] == "SENDER_2"
+
+
+def test_trace_detail_returns_full_record(client):
+    _seed_trace()
+    trace_id = client.get("/admin/traces", headers=AUTH).json()[0]["id"]
+
+    resp = client.get(f"/admin/traces/{trace_id}", headers=AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["system_prompt"] == "SYSTEM PROMPT"
+    assert body["history_window"] == [{"role": "user", "text": "Πόσο κοστίζει;"}]
+    assert body["retrieval_hits"] == [{"question": "q", "reply": "r", "score": 0.9}]
+    assert body["intent_latency_ms"] == 10.0
+    assert body["llm_latency_ms"] == 100.0
+
+
+def test_trace_detail_not_found(client):
+    resp = client.get("/admin/traces/999", headers=AUTH)
+    assert resp.status_code == 404
+
+
+def test_traces_ui_page_serves_without_auth(client):
+    resp = client.get("/admin-ui/traces")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]

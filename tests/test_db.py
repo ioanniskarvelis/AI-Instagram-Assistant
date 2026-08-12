@@ -60,3 +60,56 @@ def test_role_check_constraint_rejects_unknown_role():
                 "INSERT INTO messages (sender_id, role, text, created_at)"
                 " VALUES ('A', 'system', 'x', 0)"
             )
+
+
+def test_sweep_expired_attachments_deletes_only_expired_rows():
+    from app import db
+
+    db.init_schema()
+    now = int(time.time())
+    with db.connect() as conn:
+        conn.executemany(
+            "INSERT INTO attachments (sender_id, url, created_at) VALUES (?, ?, ?)",
+            [
+                ("A", "https://cdn/old.jpg", now - 21 * 86400),
+                ("A", "https://cdn/fresh.jpg", now - 19 * 86400),
+            ],
+        )
+
+    deleted = db.sweep_expired_attachments(now=now, retention_days=20)
+
+    assert deleted == 1
+    with db.connect() as conn:
+        remaining = [r[0] for r in conn.execute("SELECT url FROM attachments")]
+    assert remaining == ["https://cdn/fresh.jpg"]
+
+
+def test_quote_request_status_check_constraint_rejects_unknown_status():
+    from app import db
+
+    db.init_schema()
+    with db.connect() as conn:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO quote_requests"
+                " (sender_id, telegram_message_id, status, created_at)"
+                " VALUES ('A', 1, 'bogus', 0)"
+            )
+
+
+def test_quote_request_telegram_message_id_is_unique():
+    from app import db
+
+    db.init_schema()
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO quote_requests"
+            " (sender_id, telegram_message_id, status, created_at)"
+            " VALUES ('A', 1, 'pending', 0)"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO quote_requests"
+                " (sender_id, telegram_message_id, status, created_at)"
+                " VALUES ('B', 1, 'pending', 0)"
+            )

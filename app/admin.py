@@ -15,7 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from app import admin_store
+from app import admin_store, trace
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,37 @@ class MessageDetail(BaseModel):
 
 class ConversationDetail(ConversationSummary):
     messages: list[MessageDetail]
+
+
+class TraceHistoryTurn(BaseModel):
+    role: str
+    text: str
+
+
+class RetrievalHit(BaseModel):
+    question: str
+    reply: str
+    score: float
+
+
+class TraceSummary(BaseModel):
+    id: int
+    sender_id: str
+    created_at: str | None
+    incoming_text: str
+    intent: str
+    reply_source: str
+    reply: str | None
+    total_latency_ms: float
+
+
+class TraceDetail(TraceSummary):
+    history_window: list[TraceHistoryTurn]
+    intent_latency_ms: float | None
+    retrieval_hits: list[RetrievalHit]
+    retrieval_latency_ms: float | None
+    system_prompt: str | None
+    llm_latency_ms: float | None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -210,3 +241,59 @@ async def conversation_enable(sender_id: str) -> OkResponse:
 async def conversation_reset(sender_id: str) -> OkResponse:
     await asyncio.to_thread(admin_store.delete_conversation_history, sender_id)
     return OkResponse()
+
+
+# ── Traces ───────────────────────────────────────────────────────────────
+
+
+@router.get("/traces")
+async def traces(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    sender_id: str | None = Query(None),
+    intent: str | None = Query(None),
+) -> list[TraceSummary]:
+    rows = await asyncio.to_thread(
+        trace.list_traces, limit, offset, sender_id, intent
+    )
+    return [
+        TraceSummary(
+            id=r.id,
+            sender_id=r.sender_id,
+            created_at=_iso(r.created_at),
+            incoming_text=r.incoming_text,
+            intent=r.intent,
+            reply_source=r.reply_source,
+            reply=r.reply,
+            total_latency_ms=r.total_latency_ms,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/traces/{trace_id}")
+async def trace_detail(trace_id: int) -> TraceDetail:
+    row = await asyncio.to_thread(trace.get_trace, trace_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No trace with that id")
+    return TraceDetail(
+        id=row.id,
+        sender_id=row.sender_id,
+        created_at=_iso(row.created_at),
+        incoming_text=row.incoming_text,
+        intent=row.intent,
+        reply_source=row.reply_source,
+        reply=row.reply,
+        total_latency_ms=row.total_latency_ms,
+        history_window=[
+            TraceHistoryTurn(role=t.role, text=t.text) for t in row.history_window
+        ],
+        intent_latency_ms=row.intent_latency_ms,
+        retrieval_hits=[
+            RetrievalHit(question=h.question, reply=h.reply, score=h.score)
+            for h in row.retrieval_hits
+        ],
+        retrieval_latency_ms=row.retrieval_latency_ms,
+        system_prompt=row.system_prompt,
+        llm_latency_ms=row.llm_latency_ms,
+    )

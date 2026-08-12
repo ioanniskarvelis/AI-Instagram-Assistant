@@ -3,7 +3,7 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CANNED_REPLY = (
-    "Γεια σου! Ελάβαμε το μήνυμά σου και θα σου απαντήσουμε σύντομα."
+    "Γεια σας! Ελάβαμε το μήνυμά σας και θα σας απαντήσουμε σύντομα."
 )
 
 
@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     history_retention_days: int = 20
     history_window_messages: int = 20
 
+    # Burst debounce: after each inbound message, wait this long for silence
+    # before generating a reply. Each new message from the same sender resets
+    # the wait, and the buffered messages are concatenated into one query
+    # once it fires. Keeps "tattoo" / enter / "on my arm" / enter from
+    # producing three separate replies.
+    reply_debounce_seconds: float = 20.0
+
     # Bearer token the admin API requires on every /admin/* request. Set by
     # the studio's website backend (Netlify function), not the browser.
     assistant_admin_key: str = ""
@@ -67,6 +74,15 @@ class Settings(BaseSettings):
     # faster model from ANTHROPIC_MODEL — this call happens on every message.
     intent_model: str = "claude-haiku-4-5-20251001"
     intent_max_tokens: int = 50
+
+    # Tattoo quoting via the artists' Telegram chat. Leave TELEGRAM_BOT_TOKEN
+    # or TELEGRAM_CHAT_ID blank to keep the feature off — request_quote is
+    # never offered to the model, same posture as OPENROUTER_API_KEY for RAG.
+    # TELEGRAM_WEBHOOK_SECRET is the value passed as `secret_token` to
+    # Telegram's setWebhook, and is required to accept a price reply back.
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_webhook_secret: str = ""
 
 
 @lru_cache

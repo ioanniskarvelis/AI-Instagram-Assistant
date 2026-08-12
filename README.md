@@ -1,8 +1,8 @@
 # Tattoo Studio Instagram Assistant
 
 Replies to Instagram DMs for the studio using Claude, remembering the last
-20 messages of each conversation. Tattoo quoting (via Telegram Q&A with the
-owner) and calendar booking arrive in later slices.
+20 messages of each conversation, and requesting tattoo price quotes from the
+artists over Telegram. Calendar booking arrives in a later slice.
 
 ## Running locally
 
@@ -119,3 +119,38 @@ write the index file (`IsADirectoryError`). That's why the placeholder step
 above matters. Separately, if the mounted file legitimately contains no
 examples yet (e.g. the placeholder `[]`), the assistant degrades safely and
 simply runs without style examples until you build a real index.
+
+## Tattoo quoting via Telegram
+
+Once the model has, for each piece a customer describes, the style, a
+reference image or description, and size/placement, it calls a
+`request_quote` tool. That sends the gathered details — plus every
+reference-image URL the sender has sent so far — to the artists' Telegram
+chat as one message. This is optional: leave `TELEGRAM_BOT_TOKEN` or
+`TELEGRAM_CHAT_ID` unset and `request_quote` is never offered to the model,
+same posture as `OPENROUTER_API_KEY` for RAG.
+
+An artist replies with the price by using Telegram's native **Reply**
+feature directly on that message — not just posting a new message in the
+chat. `app/telegram_webhook.py` correlates the reply back to the right
+Instagram sender via the message it replied to, phrases the price for the
+customer in the assistant's usual tone, and sends it as a normal Instagram
+DM.
+
+Setup, once you have a bot (via [@BotFather](https://t.me/BotFather)) and
+have added it to the artists' group:
+
+1. Get the chat id: post any message in the group, then hit
+   `https://api.telegram.org/bot<token>/getUpdates` and read `chat.id` off
+   the response (it's negative for a group).
+2. Fill in `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and a random
+   `TELEGRAM_WEBHOOK_SECRET` of your choosing in `.env`.
+3. Point Telegram at the same tunnel hostname the Instagram webhook uses:
+   ```bash
+   curl "https://api.telegram.org/bot<token>/setWebhook?url=https://<your tunnel hostname>/telegram-webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+   ```
+
+Reference images are passed to Telegram as Instagram's own CDN URLs rather
+than downloaded and re-uploaded — Telegram fetches the URL server-side.
+Those URLs are public and time-limited, so they're only ever forwarded live,
+never fetched or stored by this app.

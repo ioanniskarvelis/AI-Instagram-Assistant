@@ -24,6 +24,32 @@ SCHEMA_STATEMENTS = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages (sender_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_messages_expiry ON messages (created_at)",
+    # One row per inbound message that reached the reply pipeline: what was
+    # retrieved, what intent fired, the assembled prompt, and per-stage
+    # timings. Purely observational — never read by the reply path itself,
+    # only by the /admin/traces API. history_window and retrieval_hits hold
+    # JSON arrays (see app/trace.py) rather than normalized child tables,
+    # since they're written once and always read back whole.
+    """
+    CREATE TABLE IF NOT EXISTS traces (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id            TEXT    NOT NULL,
+        created_at           INTEGER NOT NULL,
+        incoming_text        TEXT    NOT NULL,
+        history_window       TEXT    NOT NULL,
+        intent               TEXT    NOT NULL,
+        intent_latency_ms    REAL,
+        retrieval_hits       TEXT    NOT NULL,
+        retrieval_latency_ms REAL,
+        system_prompt        TEXT,
+        reply                TEXT,
+        reply_source         TEXT    NOT NULL,
+        llm_latency_ms       REAL,
+        total_latency_ms     REAL    NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_traces_sender ON traces (sender_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_traces_expiry ON traces (created_at)",
     # Single-row table holding the global kill switch. The row is seeded by
     # init_schema so callers can always UPDATE it rather than upserting.
     """
@@ -41,6 +67,37 @@ SCHEMA_STATEMENTS = (
     )
     """,
     "INSERT OR IGNORE INTO bot_state (id, disabled) VALUES (1, 0)",
+    # Reference-image URLs seen per sender, kept separately from `messages`
+    # (which only ever gets a bracketed placeholder) so a quote request can
+    # hand the artists real photos. Same retention window as messages.
+    """
+    CREATE TABLE IF NOT EXISTS attachments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id  TEXT    NOT NULL,
+        url        TEXT    NOT NULL,
+        created_at INTEGER NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_attachments_sender ON attachments (sender_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_attachments_expiry ON attachments (created_at)",
+    # One row per quote sent to the artists' Telegram chat. telegram_message_id
+    # is the id of the summary message the artist is expected to reply to —
+    # that's how app.telegram_webhook correlates their reply back to a
+    # sender_id, since the two conversations happen on entirely different
+    # channels.
+    """
+    CREATE TABLE IF NOT EXISTS quote_requests (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id           TEXT    NOT NULL,
+        telegram_message_id INTEGER NOT NULL UNIQUE,
+        status              TEXT    NOT NULL DEFAULT 'pending'
+                                     CHECK (status IN ('pending', 'answered')),
+        created_at          INTEGER NOT NULL,
+        resolved_at         INTEGER
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_quote_requests_message"
+    " ON quote_requests (telegram_message_id)",
 )
 
 
@@ -86,15 +143,49 @@ def sweep_expired(now: int, retention_days: int) -> int:
         return cursor.rowcount
 
 
+def sweep_expired_traces(now: int, retention_days: int) -> int:
+    """Delete traces older than the retention window. Returns rows deleted.
+
+    Shares messages' retention window rather than a dedicated setting — traces
+    are a debugging aid over the same conversation history, so there's no
+    reason for them to outlive the messages they were captured from.
+    """
+    cutoff = now - retention_days * 86400
+    with connect() as conn:
+        cursor = conn.execute("DELETE FROM traces WHERE created_at < ?", (cutoff,))
+        return cursor.rowcount
+
+
+def sweep_expired_attachments(now: int, retention_days: int) -> int:
+    """Delete attachments older than the retention window. Returns rows deleted.
+
+    Shares messages' retention window — an attachment URL is customer content
+    tied to a conversation, so it shouldn't outlive the messages around it.
+    """
+    cutoff = now - retention_days * 86400
+    with connect() as conn:
+        cursor = conn.execute("DELETE FROM attachments WHERE created_at < ?", (cutoff,))
+        return cursor.rowcount
+
+
 async def sweep_loop() -> None:
     """Run the expiry sweep on a fixed interval until cancelled."""
     settings = get_settings()
     while True:
         try:
+            now = int(time.time())
             deleted = await asyncio.to_thread(
-                sweep_expired, int(time.time()), settings.history_retention_days
+                sweep_expired, now, settings.history_retention_days
             )
             logger.info("Expiry sweep deleted %d messages", deleted)
+            traces_deleted = await asyncio.to_thread(
+                sweep_expired_traces, now, settings.history_retention_days
+            )
+            logger.info("Expiry sweep deleted %d traces", traces_deleted)
+            attachments_deleted = await asyncio.to_thread(
+                sweep_expired_attachments, now, settings.history_retention_days
+            )
+            logger.info("Expiry sweep deleted %d attachments", attachments_deleted)
         except asyncio.CancelledError:
             raise
         except Exception:
