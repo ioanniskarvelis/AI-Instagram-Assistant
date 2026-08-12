@@ -4,6 +4,7 @@ import anthropic
 
 from app.config import get_settings
 from app.history import Turn
+from app.intent import Intent
 from app.rag import Example
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,25 @@ STYLE_BLOCK_FOOTER = (
     "above still apply."
 )
 
+INTENT_ADDENDA: dict[Intent, str] = {
+    Intent.PRICE: (
+        "The customer is asking about price or cost. Keep the acknowledgment "
+        "brief and steer toward the next step — the artist reviews the idea "
+        "and follows up with a price. Don't hedge with a range or an "
+        "'it depends' explanation beyond that."
+    ),
+    Intent.BOOKING: (
+        "The customer is asking about scheduling or availability. Keep the "
+        "acknowledgment brief and steer toward the next step — the artist "
+        "will follow up to arrange a time. Don't speculate about availability."
+    ),
+    Intent.DESIGN: (
+        "The customer is describing or discussing a tattoo idea. Engage with "
+        "the specifics they've shared, and ask exactly one clarifying question "
+        "(placement, size, style, reference images) if a key detail is missing."
+    ),
+}
+
 MAX_EXAMPLE_FIELD_CHARS = 300
 
 
@@ -61,7 +81,9 @@ _client = anthropic.AsyncAnthropic(api_key=get_settings().anthropic_api_key)
 
 
 async def generate_reply(
-    turns: list[Turn], examples: list[Example] | None = None
+    turns: list[Turn],
+    examples: list[Example] | None = None,
+    intent: Intent | None = None,
 ) -> str | None:
     """Generate a reply from the conversation window.
 
@@ -69,9 +91,12 @@ async def generate_reply(
     Meta whether or not generation worked, and the caller falls back to the
     canned reply.
     """
-    system_text = SYSTEM_PROMPT
+    parts = [SYSTEM_PROMPT]
+    if intent is not None and intent != Intent.GENERAL:
+        parts.append(INTENT_ADDENDA[intent])
     if examples:
-        system_text = f"{SYSTEM_PROMPT}\n\n{_render_style_block(examples)}"
+        parts.append(_render_style_block(examples))
+    system_text = "\n\n".join(parts)
 
     try:
         settings = get_settings()
