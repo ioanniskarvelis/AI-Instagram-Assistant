@@ -195,8 +195,8 @@ async def test_generate_reply_includes_addendum_for_each_non_general_intent():
         return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
     )
 
-    for intent in (Intent.PRICE, Intent.BOOKING, Intent.DESIGN):
-        await generate_reply([Turn(role="user", text="γεια")], intent=intent)
+    for intent in (Intent.PRICE, Intent.BOOKING, Intent.DESIGN, Intent.AFTERCARE):
+        await generate_reply([Turn(role="user", text="γεία")], intent=intent)
         body = json.loads(route.calls.last.request.content)
         assert INTENT_ADDENDA[intent] in body["system"][0]["text"]
 
@@ -215,6 +215,62 @@ async def test_generate_reply_general_intent_matches_todays_prompt():
 
     body = json.loads(route.calls.last.request.content)
     assert body["system"][0]["text"] == SYSTEM_PROMPT
+
+
+@respx.mock
+async def test_generate_reply_complaint_intent_matches_todays_prompt():
+    """COMPLAINT has no INTENT_ADDENDA entry — generate_reply must degrade to
+    the base prompt exactly like GENERAL, via the same INTENT_ADDENDA.get()
+    path already covered by test_generate_reply_unmapped_intent_degrades_to_no_addendum.
+    This is the defense-in-depth guarantee: even if the webhook's complaint
+    short-circuit is ever bypassed by a bug, the fallback reply carries no
+    complaint-specific phrasing."""
+    from app.history import Turn
+    from app.intent import Intent
+    from app.llm import SYSTEM_PROMPT, generate_reply
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    await generate_reply([Turn(role="user", text="γεια")], intent=Intent.COMPLAINT)
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["system"][0]["text"] == SYSTEM_PROMPT
+
+
+def test_price_addendum_covers_discounts():
+    from app.intent import Intent
+    from app.llm import INTENT_ADDENDA
+
+    assert "discount" in INTENT_ADDENDA[Intent.PRICE]
+
+
+def test_booking_addendum_covers_payment_and_age():
+    from app.intent import Intent
+    from app.llm import INTENT_ADDENDA
+
+    text = INTENT_ADDENDA[Intent.BOOKING]
+    assert "payment" in text
+    assert "age" in text
+
+
+def test_design_addendum_covers_high_risk_placement():
+    from app.intent import Intent
+    from app.llm import INTENT_ADDENDA
+
+    text = INTENT_ADDENDA[Intent.DESIGN]
+    assert "fingers" in text
+    assert "additional cost" in text
+
+
+def test_aftercare_addendum_redirects_concerning_symptoms():
+    from app.intent import Intent
+    from app.llm import INTENT_ADDENDA
+
+    text = INTENT_ADDENDA[Intent.AFTERCARE]
+    assert "doctor" in text
+    assert "don't diagnose" in text.lower()
 
 
 @respx.mock

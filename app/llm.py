@@ -42,21 +42,47 @@ STYLE_BLOCK_FOOTER = (
 
 INTENT_ADDENDA: dict[Intent, str] = {
     Intent.PRICE: (
-        "The customer is asking about price or cost. Keep the acknowledgment "
-        "brief and steer toward the next step — the artist reviews the idea "
-        "and follows up with a price. Don't hedge with a range or an "
-        "'it depends' explanation beyond that."
+        "The customer is asking about price, cost, or a discount/promo. "
+        "Keep the acknowledgment brief and steer toward the next step — "
+        "the artist reviews the idea and follows up with a price. Don't "
+        "hedge with a range or an 'it depends' explanation beyond that, "
+        "and don't confirm or quote a specific discount or promo rate "
+        "even if they mention one — that's the artist's call too."
     ),
     Intent.BOOKING: (
-        "The customer is asking about scheduling or availability. Keep the "
-        "acknowledgment brief and steer toward the next step — the artist "
-        "will follow up to arrange a time. Don't speculate about availability."
+        "The customer is asking about scheduling, availability, or the "
+        "booking process itself (payment method, deposit, age/ID). Keep "
+        "the acknowledgment brief and steer toward the next step — the "
+        "artist will follow up to arrange a time. Don't speculate about "
+        "availability, and don't state a payment, deposit, or age/ID "
+        "policy beyond what's already in the style examples — say the "
+        "artist will confirm."
     ),
     Intent.DESIGN: (
-        "The customer is describing or discussing a tattoo idea. Engage with "
-        "the specifics they've shared, and ask exactly one clarifying question "
-        "(placement, size, style, reference images) if a key detail is missing."
+        "The customer is describing or discussing a tattoo idea. Engage "
+        "with the specifics they've shared, and ask exactly one "
+        "clarifying question (placement, size, style, reference images) "
+        "if a key detail is missing. If the placement is a high-fade-risk "
+        "area (fingers, hands, lips, palms, soles, inside the mouth), "
+        "briefly note that retention isn't guaranteed there and a "
+        "touch-up may involve an additional cost the artist will "
+        "confirm — one sentence is enough, don't lecture."
     ),
+    Intent.AFTERCARE: (
+        "The customer is asking about healing or aftercare. General, "
+        "universally-true care reminders (keep it clean, avoid direct "
+        "sun and soaking, don't pick at it) are fine to give even "
+        "without a style example. Don't recommend a specific product "
+        "unless it's in the style examples, don't diagnose a symptom, "
+        "and for anything that sounds like a possible infection or "
+        "allergic reaction, tell them to contact the studio directly or "
+        "see a doctor rather than resolving it over DM."
+    ),
+    # Intent.COMPLAINT is intentionally absent: the webhook never calls
+    # generate_reply for a COMPLAINT-classified message (see app/webhook.py).
+    # If that short-circuit is ever bypassed, INTENT_ADDENDA.get() falls
+    # back to no addendum — the same safe default as GENERAL — rather than
+    # raising. See test_generate_reply_complaint_intent_matches_todays_prompt.
 }
 
 MAX_EXAMPLE_FIELD_CHARS = 300
