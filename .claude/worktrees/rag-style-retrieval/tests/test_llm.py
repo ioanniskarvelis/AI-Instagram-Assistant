@@ -1,0 +1,166 @@
+import json
+
+import httpx
+import respx
+
+ENDPOINT = "https://api.anthropic.com/v1/messages"
+
+
+def _message(text: str, stop_reason: str = "end_turn") -> dict:
+    """A minimal but schema-valid Messages API response."""
+    return {
+        "id": "msg_01",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": [{"type": "text", "text": text}],
+        "stop_reason": stop_reason,
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+
+@respx.mock
+async def test_generate_reply_returns_text_and_sends_the_window():
+    from app.history import Turn
+    from app.llm import SYSTEM_PROMPT, generate_reply
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    turns = [
+        Turn(role="user", text="γεια"),
+        Turn(role="assistant", text="γεια σου"),
+        Turn(role="user", text="πόσο κάνει;"),
+    ]
+    assert await generate_reply(turns) == "Καλησπέρα!"
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["model"] == "claude-sonnet-5"
+    assert body["max_tokens"] == 2000
+    assert body["output_config"] == {"effort": "low"}
+    assert body["system"][0]["text"] == SYSTEM_PROMPT
+    assert body["messages"] == [
+        {"role": "user", "content": "γεια"},
+        {"role": "assistant", "content": "γεια σου"},
+        {"role": "user", "content": "πόσο κάνει;"},
+    ]
+    # Thinking must never be disabled — effort is the cost lever.
+    assert body.get("thinking") is None
+
+
+@respx.mock
+async def test_generate_reply_returns_none_on_api_error():
+    from app.history import Turn
+    from app.llm import generate_reply
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            400, json={"type": "error", "error": {"type": "invalid_request_error",
+                                                  "message": "bad"}}
+        )
+    )
+
+    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+
+
+@respx.mock
+async def test_generate_reply_returns_none_on_transport_error():
+    from app.history import Turn
+    from app.llm import generate_reply
+
+    respx.post(ENDPOINT).mock(side_effect=httpx.ConnectError("boom"))
+
+    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+
+
+@respx.mock
+async def test_generate_reply_returns_none_on_refusal():
+    from app.history import Turn
+    from app.llm import generate_reply
+
+    refusal = _message("", stop_reason="refusal")
+    refusal["content"] = []
+    respx.post(ENDPOINT).mock(return_value=httpx.Response(200, json=refusal))
+
+    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+
+
+@respx.mock
+async def test_generate_reply_returns_none_on_truncation():
+    from app.history import Turn
+    from app.llm import generate_reply
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            200, json=_message("Η τιμή ξεκινάει από", stop_reason="max_tokens")
+        )
+    )
+
+    assert await generate_reply([Turn(role="user", text="γεια")]) is None
+
+
+@respx.mock
+async def test_generate_reply_includes_style_examples_after_rules():
+    from app.history import Turn
+    from app.llm import SYSTEM_PROMPT, generate_reply
+    from app.rag import Example
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    examples = [
+        Example(question="Πόσο κοστίζει;", reply="Στείλε φωτο και σου λέμε [price]"),
+    ]
+    await generate_reply([Turn(role="user", text="γεια")], examples)
+
+    body = json.loads(route.calls.last.request.content)
+    system_text = body["system"][0]["text"]
+    assert system_text.startswith(SYSTEM_PROMPT)
+    style_index = system_text.index("STYLE REFERENCE")
+    assert style_index > len(SYSTEM_PROMPT)
+    assert "Πόσο κοστίζει;" in system_text
+    assert "Στείλε φωτο και σου λέμε [price]" in system_text
+
+
+@respx.mock
+async def test_generate_reply_truncates_long_examples_in_style_block():
+    from app.history import Turn
+    from app.llm import MAX_EXAMPLE_FIELD_CHARS, generate_reply
+    from app.rag import Example
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    long_reply = "x" * (MAX_EXAMPLE_FIELD_CHARS + 50)
+    short_reply = "a short reply"
+    examples = [
+        Example(question="short question", reply=long_reply),
+        Example(question="another short question", reply=short_reply),
+    ]
+    await generate_reply([Turn(role="user", text="γεια")], examples)
+
+    body = json.loads(route.calls.last.request.content)
+    system_text = body["system"][0]["text"]
+
+    assert long_reply not in system_text
+    assert ("x" * (MAX_EXAMPLE_FIELD_CHARS - 1) + "…") in system_text
+    assert short_reply in system_text
+
+
+@respx.mock
+async def test_generate_reply_without_examples_matches_todays_prompt():
+    from app.history import Turn
+    from app.llm import SYSTEM_PROMPT, generate_reply
+
+    route = respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_message("Καλησπέρα!"))
+    )
+
+    await generate_reply([Turn(role="user", text="γεια")])
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["system"][0]["text"] == SYSTEM_PROMPT
